@@ -4,22 +4,24 @@ app/workflow/pipeline.py
 Orchestrates the complete analysis pipeline.
 
 Sequence:
+
+Phase 1 (Preparation):
   1. Validate & ingest Excel
   2. Detect data types
   3. Clean data
   4. Handle missing values
   5. Detect outliers
   6. Profile all columns
-  7. Univariate analysis
-  8. Bivariate analysis
-  9. Multivariate analysis
-  10. Statistical analysis
-  11. Probability analysis
-  12. Generate insights + relevance scores
-  13. Detect KPIs
-  14. Select charts
-  15. Generate DAX
-  16. Render preview
+
+(User Configuration Step: Select Columns, Analysis Types, Goal)
+
+Phase 2 (Analysis):
+  7. Selected analyses (Univariate, Bivariate, Multivariate, Statistical, Probability)
+  8. Generate insights + relevance scores
+  9. Detect KPIs
+  10. Select charts
+  11. Generate DAX
+  12. Render preview
   
 Returns a PipelineResult with all computed data for the Flask app.
 """
