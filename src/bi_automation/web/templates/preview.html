@@ -1,0 +1,90 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ title }} — Dashboard Preview{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/preview.css') }}">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<script src="{{ url_for('static', filename='js/preview.js') }}" defer></script>
+{% endblock %}
+
+{% block content %}
+<div class="db-header">
+  <h1>📊 {{ title }}</h1>
+  <div class="meta">Dashboard Preview · Local Analysis · All data remains on this machine</div>
+</div>
+
+<div class="db-body">
+
+  <!-- Quality Summary -->
+  <div class="section-title">Data Quality Summary</div>
+  {{ quality_html|safe }}
+
+  <!-- KPIs -->
+  <div class="section-title">Key Performance Indicators</div>
+  <div class="kpi-grid">{{ kpi_cards_html|safe }}</div>
+
+  <!-- Key Insights -->
+  {{ insights_html|safe }}
+
+  <!-- Dashboard Pages -->
+  <div class="section-title">Dashboard Pages</div>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('p1',this)">Executive Overview</button>
+    <button class="tab-btn" onclick="showTab('p2',this)">Detailed Analysis</button>
+    <button class="tab-btn" onclick="showTab('p3',this)">Trend Analysis</button>
+    <button class="tab-btn" onclick="showTab('p4',this)">Statistical Insights</button>
+  </div>
+
+  <div id="tab-p1" class="tab-content active">
+    <div class="chart-grid">{{ charts_p1_html|safe }}</div>
+  </div>
+  <div id="tab-p2" class="tab-content">
+    <div class="chart-grid">{{ charts_p2_html|safe }}</div>
+  </div>
+  <div id="tab-p3" class="tab-content">
+    <div class="chart-grid">{{ charts_p3_html|safe }}</div>
+  </div>
+  <div id="tab-p4" class="tab-content">
+    <div class="chart-grid">{{ charts_p4_html|safe }}</div>
+  </div>
+
+</div>
+
+<!-- Feedback panel -->
+<div class="feedback-panel" id="feedback-panel">
+  <button class="feedback-toggle" onclick="toggleFeedback()" id="toggle-btn">
+    <span id="toggle-icon">&#9654;</span>&nbsp; Request Changes Before Regenerating
+  </button>
+  <div class="feedback-body" id="feedback-body">
+    <label class="feedback-label" for="feedback-text">Describe what you want changed in the dashboard:</label>
+    <textarea
+      class="feedback-textarea"
+      id="feedback-text"
+      placeholder="e.g. Remove scatter plots. Add a pie chart for Category. Focus on Revenue trends. Show top 5 Regions. Show distribution of Sales. Add line chart for Date vs Profit."
+    ></textarea>
+    <div class="feedback-hints">
+      <strong style="font-size:0.7rem;color:var(--muted)">Quick inserts:</strong>
+      <span onclick="insertHint('Remove scatter plots')">Remove scatter plots</span>
+      <span onclick="insertHint('Add pie chart for ')">Add pie chart for...</span>
+      <span onclick="insertHint('Focus on ')">Focus on column...</span>
+      <span onclick="insertHint('Show top 5 categories')">Show top 5</span>
+      <span onclick="insertHint('Add bar chart for ')">Add bar chart for...</span>
+      <span onclick="insertHint('Show distribution of ')">Distribution of...</span>
+      <span onclick="insertHint('Trend of ')">Trend of...</span>
+      <span onclick="insertHint('Show correlation between  and ')">Correlation between...</span>
+    </div>
+    <div class="interpreted-msg" id="interp-msg"></div>
+  </div>
+</div>
+
+<!-- Approval action bar -->
+<div class="action-bar">
+  <button class="btn btn-primary" id="btn-approve" onclick="approveAndGenerate()">
+    &#x2705; Approve &amp; Generate Power BI
+  </button>
+  <button class="btn btn-secondary" id="btn-regen" onclick="regenerate()">
+    &#x1F504; Regenerate Dashboard
+  </button>
+</div>
+{% endblock %}

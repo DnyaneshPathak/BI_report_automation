@@ -211,7 +211,7 @@ class PreviewRenderer:
         ax.grid(axis="y", alpha=0.3, linestyle="--")
 
     # ── HTML generation ───────────────────────────────────────────────────────
-    def _build_html(self, chart_images: dict) -> dict:
+    def _build_html(self, chart_images: Dict[str, str]) -> str:
         kpi_cards_html  = self._kpi_cards_html()
         charts_p1_html  = self._page_charts_html(chart_images, page=1)
         charts_p2_html  = self._page_charts_html(chart_images, page=2)
@@ -220,16 +220,298 @@ class PreviewRenderer:
         insights_html   = self._insights_html()
         quality_html    = self._quality_html()
 
-        return {
-            "title": self.title,
-            "kpi_cards_html": kpi_cards_html,
-            "charts_p1_html": charts_p1_html,
-            "charts_p2_html": charts_p2_html,
-            "charts_p3_html": charts_p3_html,
-            "charts_p4_html": charts_p4_html,
-            "insights_html": insights_html,
-            "quality_html": quality_html,
-        }
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{self.title} — Dashboard Preview</title>
+<style>
+  :root {{
+    --navy:   {NAVY};
+    --blue:   {BLUE};
+    --bg:     {BG};
+    --surface:{SURFACE};
+    --border: {BORDER};
+    --text:   {TEXT};
+    --muted:  {MUTED};
+  }}
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }}
+  .db-header {{
+    background: linear-gradient(135deg, var(--navy) 0%, #1e3a6e 100%);
+    color: #fff; padding: 18px 32px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 3px solid var(--blue);
+  }}
+  .db-header h1 {{ font-size: 1.3rem; font-weight: 700; letter-spacing: 0.02em; }}
+  .db-header .meta {{ font-size: 0.75rem; opacity: 0.7; }}
+  .db-body {{ padding: 24px 32px; }}
+  /* KPI Cards */
+  .kpi-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px; margin-bottom: 24px;
+  }}
+  .kpi-card {{
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }}
+  .kpi-card:hover {{ transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.12); }}
+  .kpi-icon {{ font-size: 1.5rem; margin-bottom: 6px; }}
+  .kpi-value {{ font-size: 1.6rem; font-weight: 800; color: var(--navy); line-height: 1.1; }}
+  .kpi-title {{ font-size: 0.72rem; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; }}
+  /* Section headers */
+  .section-title {{
+    font-size: 0.8rem; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.1em;
+    margin: 28px 0 12px; padding-bottom: 6px;
+    border-bottom: 2px solid var(--border);
+  }}
+  /* Charts */
+  .chart-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 18px; margin-bottom: 24px;
+  }}
+  .chart-card {{
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    overflow: hidden;
+  }}
+  .chart-card img {{ width: 100%; border-radius: 6px; }}
+  .chart-card .empty-chart {{
+    height: 160px; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); border-radius: 6px; color: var(--muted); font-size: 0.8rem;
+  }}
+  /* Tabs */
+  .tabs {{ display: flex; gap: 4px; margin-bottom: 18px; flex-wrap: wrap; }}
+  .tab-btn {{
+    padding: 7px 18px; border: 1px solid var(--border); border-radius: 20px;
+    background: var(--surface); color: var(--muted); cursor: pointer;
+    font-size: 0.78rem; font-weight: 600; transition: all 0.15s;
+  }}
+  .tab-btn.active {{ background: var(--navy); color: #fff; border-color: var(--navy); }}
+  .tab-content {{ display: none; }}
+  .tab-content.active {{ display: block; }}
+  /* Insights */
+  .insight-panel {{
+    background: linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%);
+    border: 1px solid #c7d7fd; border-radius: 12px; padding: 20px 24px;
+    margin-bottom: 24px;
+  }}
+  .insight-panel h3 {{ font-size: 0.8rem; font-weight: 700; color: var(--navy); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }}
+  .insight-item {{ display: flex; gap: 10px; margin-bottom: 8px; font-size: 0.83rem; color: var(--text); }}
+  .insight-bullet {{ color: var(--blue); font-weight: 700; flex-shrink: 0; }}
+  /* Quality */
+  .quality-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }}
+  .quality-item {{ background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }}
+  .quality-label {{ font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }}
+  .quality-value {{ font-size: 1.1rem; font-weight: 700; color: var(--navy); margin-top: 2px; }}
+  /* Approval buttons */
+  .action-bar {{
+    position: sticky; bottom: 0; background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--border);
+    padding: 16px 32px; display: flex; gap: 16px; align-items: center;
+    justify-content: center; z-index: 100;
+  }}
+  .btn {{ padding: 12px 28px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; font-weight: 700; transition: all 0.15s; }}
+  .btn-primary {{ background: var(--navy); color: #fff; }}
+  .btn-primary:hover {{ background: #0f1e38; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(27,42,74,0.3); }}
+  .btn-secondary {{ background: var(--surface); color: var(--navy); border: 2px solid var(--navy); }}
+  .btn-secondary:hover {{ background: #f0f4ff; }}
+  /* Feedback panel */
+  .feedback-panel {{
+    background: #fffbeb; border-top: 1px solid #fde68a;
+    padding: 16px 32px;
+  }}
+  .feedback-toggle {{
+    background: none; border: none; cursor: pointer;
+    font-size: 0.82rem; font-weight: 700; color: var(--navy);
+    display: flex; align-items: center; gap: 6px;
+    padding: 0; margin: 0 auto 0 0;
+  }}
+  .feedback-toggle:hover {{ color: var(--blue); }}
+  .feedback-body {{ display: none; margin-top: 12px; }}
+  .feedback-body.open {{ display: block; }}
+  .feedback-label {{ font-size: 0.78rem; font-weight: 700; color: var(--navy); margin-bottom: 6px; display: block; }}
+  .feedback-textarea {{
+    width: 100%; min-height: 80px; padding: 10px 14px;
+    border: 1px solid var(--border); border-radius: 8px;
+    font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.85rem;
+    color: var(--text); background: var(--surface); resize: vertical;
+    outline: none; transition: border-color 0.15s;
+  }}
+  .feedback-textarea:focus {{ border-color: var(--blue); }}
+  .feedback-hints {{ font-size: 0.7rem; color: var(--muted); margin-top: 6px; }}
+  .feedback-hints span {{ background: #f1f5f9; border-radius: 4px; padding: 2px 8px; margin: 2px; display: inline-block; cursor: pointer; transition: background 0.1s; }}
+  .feedback-hints span:hover {{ background: #dbeafe; color: var(--blue); }}
+  .interpreted-msg {{ font-size: 0.75rem; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 12px; margin-top: 8px; display: none; }}
+</style>
+</head>
+<body>
+
+<div class="db-header">
+  <h1>📊 {self.title}</h1>
+  <div class="meta">Dashboard Preview · Local Analysis · All data remains on this machine</div>
+</div>
+
+<div class="db-body">
+
+  <!-- Quality Summary -->
+  <div class="section-title">Data Quality Summary</div>
+  {quality_html}
+
+  <!-- KPIs -->
+  <div class="section-title">Key Performance Indicators</div>
+  <div class="kpi-grid">{kpi_cards_html}</div>
+
+  <!-- Key Insights -->
+  {insights_html}
+
+  <!-- Dashboard Pages -->
+  <div class="section-title">Dashboard Pages</div>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('p1',this)">Executive Overview</button>
+    <button class="tab-btn" onclick="showTab('p2',this)">Detailed Analysis</button>
+    <button class="tab-btn" onclick="showTab('p3',this)">Trend Analysis</button>
+    <button class="tab-btn" onclick="showTab('p4',this)">Statistical Insights</button>
+  </div>
+
+  <div id="tab-p1" class="tab-content active">
+    <div class="chart-grid">{charts_p1_html}</div>
+  </div>
+  <div id="tab-p2" class="tab-content">
+    <div class="chart-grid">{charts_p2_html}</div>
+  </div>
+  <div id="tab-p3" class="tab-content">
+    <div class="chart-grid">{charts_p3_html}</div>
+  </div>
+  <div id="tab-p4" class="tab-content">
+    <div class="chart-grid">{charts_p4_html}</div>
+  </div>
+
+</div>
+
+<!-- Feedback panel -->
+<div class="feedback-panel" id="feedback-panel">
+  <button class="feedback-toggle" onclick="toggleFeedback()" id="toggle-btn">
+    <span id="toggle-icon">&#9654;</span>&nbsp; Request Changes Before Regenerating
+  </button>
+  <div class="feedback-body" id="feedback-body">
+    <label class="feedback-label" for="feedback-text">Describe what you want changed in the dashboard:</label>
+    <textarea
+      class="feedback-textarea"
+      id="feedback-text"
+      placeholder="e.g. Remove scatter plots. Add a pie chart for Category. Focus on Revenue trends. Show top 5 Regions. Show distribution of Sales. Add line chart for Date vs Profit."
+    ></textarea>
+    <div class="feedback-hints">
+      <strong style="font-size:0.7rem;color:var(--muted)">Quick inserts:</strong>
+      <span onclick="insertHint('Remove scatter plots')">Remove scatter plots</span>
+      <span onclick="insertHint('Add pie chart for ')">Add pie chart for...</span>
+      <span onclick="insertHint('Focus on ')">Focus on column...</span>
+      <span onclick="insertHint('Show top 5 categories')">Show top 5</span>
+      <span onclick="insertHint('Add bar chart for ')">Add bar chart for...</span>
+      <span onclick="insertHint('Show distribution of ')">Distribution of...</span>
+      <span onclick="insertHint('Trend of ')">Trend of...</span>
+      <span onclick="insertHint('Show correlation between  and ')">Correlation between...</span>
+    </div>
+    <div class="interpreted-msg" id="interp-msg"></div>
+  </div>
+</div>
+
+<!-- Approval action bar -->
+<div class="action-bar">
+  <button class="btn btn-primary" id="btn-approve" onclick="approveAndGenerate()">
+    &#x2705; Approve &amp; Generate Power BI
+  </button>
+  <button class="btn btn-secondary" id="btn-regen" onclick="regenerate()">
+    &#x1F504; Regenerate Dashboard
+  </button>
+</div>
+
+<script>
+function showTab(tabId, el) {{
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tabId).classList.add('active');
+  el.classList.add('active');
+}}
+function toggleFeedback() {{
+  const body = document.getElementById('feedback-body');
+  const icon = document.getElementById('toggle-icon');
+  body.classList.toggle('open');
+  icon.innerHTML = body.classList.contains('open') ? '&#9660;' : '&#9654;';
+}}
+function insertHint(text) {{
+  const ta = document.getElementById('feedback-text');
+  ta.value = ta.value ? ta.value.trimEnd() + ' ' + text : text;
+  ta.focus();
+  // Auto-open feedback panel
+  const body = document.getElementById('feedback-body');
+  if (!body.classList.contains('open')) toggleFeedback();
+}}
+function approveAndGenerate() {{
+  document.getElementById('btn-approve').textContent = 'Generating...';
+  document.getElementById('btn-approve').disabled = true;
+  fetch('/approve', {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{action:'approve'}})}})
+    .then(r => r.json())
+    .then(d => {{
+      if(d.success) {{
+        window.location.href = '/complete';
+      }} else {{
+        alert('Error: ' + d.error);
+        document.getElementById('btn-approve').textContent = 'Approve & Generate Power BI';
+        document.getElementById('btn-approve').disabled = false;
+      }}
+    }})
+    .catch(e => {{
+      alert('Error: ' + e);
+      document.getElementById('btn-approve').textContent = 'Approve & Generate Power BI';
+      document.getElementById('btn-approve').disabled = false;
+    }});
+}}
+function regenerate() {{
+  const feedback = document.getElementById('feedback-text').value.trim();
+  const btn = document.getElementById('btn-regen');
+  btn.textContent = 'Regenerating...';
+  btn.disabled = true;
+  const interpMsg = document.getElementById('interp-msg');
+  interpMsg.style.display = 'none';
+  fetch('/regenerate', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{feedback: feedback}})
+  }})
+    .then(r => r.json())
+    .then(d => {{
+      if(d.success) {{
+        if(d.interpreted) {{
+          interpMsg.textContent = 'Applied: ' + d.interpreted;
+          interpMsg.style.display = 'block';
+          setTimeout(() => window.location.reload(), 1200);
+        }} else {{
+          window.location.reload();
+        }}
+      }} else {{
+        alert('Error: ' + (d.error || 'Unknown error'));
+        btn.textContent = 'Regenerate Dashboard';
+        btn.disabled = false;
+      }}
+    }})
+    .catch(e => {{
+      alert('Error: ' + e);
+      btn.textContent = 'Regenerate Dashboard';
+      btn.disabled = false;
+    }});
+}}
+</script>
+</body>
+</html>"""
 
     # ── HTML fragment builders ─────────────────────────────────────────────────
     def _kpi_cards_html(self) -> str:

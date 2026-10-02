@@ -1,0 +1,38 @@
+# ── Runtime data — NEVER commit ───────────────────────────────────────────────
+var/
+temp/
+outputs/
+*.log
+
+# ── Data files — NEVER commit real or test data ───────────────────────────────
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+
+# ── Python artefacts ──────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Environments ──────────────────────────────────────────────────────────────
+.env
+venv/
+.venv/
+env/
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+var/.secret_key
+.secret_key
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.suo
+*.user

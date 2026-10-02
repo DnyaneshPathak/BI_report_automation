@@ -93,7 +93,8 @@ def validate_dataset(name: str, file_path: Path) -> int:
 
     # --- Preview HTML ---
     total += 1; passed += _check(
-        len(result.preview_html) > 1000, f"Preview HTML generated ({len(result.preview_html)} chars)"
+        isinstance(result.preview_html, dict) and "charts_p1_html" in result.preview_html, 
+        f"Preview HTML dict generated ({len(result.preview_html)} keys)"
     )
 
     # --- Privacy ---
@@ -133,8 +134,8 @@ def main():
     print(f"\n{'='*55}")
     print(f"  OVERALL: {total_passed}/{total_checks} checks passed")
     pct = total_passed / max(total_checks, 1) * 100
-    status = "✅ PASS" if pct >= 90 else "⚠️  PARTIAL" if pct >= 70 else "❌ FAIL"
-    print(f"  Score:   {pct:.0f}% — {status}")
+    status = "[PASS]" if pct >= 90 else "[PARTIAL]" if pct >= 70 else "[FAIL]"
+    print(f"  Score:   {pct:.0f}% -- {status}")
     print("="*55)
 
 

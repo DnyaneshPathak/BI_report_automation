@@ -1,0 +1,5 @@
+pytest
+pytest-cov
+ruff>=0.4
+black>=24
+pip-audit

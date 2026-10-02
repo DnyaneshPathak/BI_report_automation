@@ -13,6 +13,8 @@ All data is processed locally. No data is sent externally.
 
 from __future__ import annotations
 
+from bi_automation.security.csrf import csrf_protect
+
 import json
 import logging
 import os
@@ -34,13 +36,13 @@ from config import (
     SECRET_KEY, OUTPUT_DIR, TEMP_DIR, PALETTE,
 )
 from app.workflow.pipeline import AnalysisPipeline, PipelineResult
-from powerbi.model_builder import ModelBuilder
-from powerbi.exporter import Exporter
+from bi_automation.powerbi.model_builder import ModelBuilder
+from bi_automation.powerbi.exporter import Exporter
 from security.privacy import cleanup_temp_files
 
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, template_folder="../../templates", static_folder="../../static")
+app = Flask(__name__, template_folder="../../src/bi_automation/web/templates", static_folder="../../src/bi_automation/web/static")
 app.secret_key = SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024   # 200 MB
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -100,8 +102,6 @@ UPLOAD_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Excel → Power BI Automation</title>
 <meta name="description" content="Automated local Excel to Power BI dashboard generator. 100% local processing — your data never leaves your machine.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--navy:#1B2A4A;--blue:#2563EB;--accent:#3B82F6;--bg:#F8FAFC;--surface:#FFFFFF;--border:#E2E8F0;--text:#0F172A;--muted:#64748B;}
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -152,6 +152,7 @@ footer{text-align:center;padding:20px;color:var(--muted);font-size:0.72rem;borde
   <p class="hero-sub">Upload any Excel workbook. Our system automatically analyses your data, generates insights, and builds a professional Power BI dashboard — entirely on your machine.</p>
 
   <form id="upload-form" action="/analyze" method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
     <div class="upload-card" id="drop-zone">
       <input type="file" name="excel_file" id="file-input" accept=".xlsx,.xls,.xlsm">
       <div class="upload-icon">📂</div>
@@ -219,7 +220,6 @@ PROCESSING_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <title>Analysing — BI Report Automation</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--navy:#1B2A4A;--blue:#2563EB;--bg:#F8FAFC;--surface:#FFFFFF;--border:#E2E8F0;--text:#0F172A;--muted:#64748B;--success:#059669;}
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -326,7 +326,6 @@ COMPLETE_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <title>Dashboard Ready — BI Report Automation</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--navy:#1B2A4A;--blue:#2563EB;--bg:#F8FAFC;--surface:#FFFFFF;--border:#E2E8F0;--text:#0F172A;--muted:#64748B;--success:#059669;}
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -380,15 +379,17 @@ h1{font-size:1.8rem;font-weight:800;color:var(--navy);margin-bottom:10px;}
 
 @app.route("/")
 def index():
-    return UPLOAD_HTML
+    from flask import render_template
+    return render_template("upload.html")
 
 
 @app.route("/analyze", methods=["POST"])
+@csrf_protect
 def analyze():
-    if "excel_file" not in request.files:
+    if "file" not in request.files:
         return redirect(url_for("index"))
 
-    uploaded = request.files["excel_file"]
+    uploaded = request.files["file"]
     if not uploaded or uploaded.filename == "":
         return redirect(url_for("index"))
 
@@ -420,9 +421,9 @@ def analyze():
     thread = threading.Thread(target=run_pipeline, daemon=True)
     thread.start()
 
-    # Render processing screen using Flask's render_template_string
-    # (this ensures tojson and all Jinja2 filters are available)
-    return render_template_string(PROCESSING_HTML, steps=AnalysisPipeline.STEPS, session_id=sid)
+    # Render processing screen using Flask's render_template
+    from flask import render_template
+    return render_template("processing.html", session_id=sid)
 
 
 @app.route("/progress/<session_id>")
@@ -453,6 +454,7 @@ def progress_stream(session_id: str):
 
 @app.route("/preview")
 def preview():
+    from bi_automation.security.csrf import get_token
     sid = session.get("sid")
     if not sid or sid not in _sessions:
         return redirect(url_for("index"))
@@ -461,10 +463,15 @@ def preview():
     if not result or not result.success:
         err = result.error if result else "Processing failed"
         return f"<h2 style='font-family:Inter,sans-serif;padding:60px;color:#dc2626'>Error: {err}</h2><a href='/'>Try Again</a>"
-    return result.preview_html
+    
+    from flask import render_template
+    
+    context = result.preview_html  # this is now a dict
+    return render_template("preview.html", **context)
 
 
 @app.route("/approve", methods=["POST"])
+@csrf_protect
 def approve():
     sid = session.get("sid")
     if not sid or sid not in _sessions:
@@ -515,8 +522,9 @@ def complete():
     size_str = f"{size_kb} KB" if size_kb < 1024 else f"{size_kb//1024:.1f} MB"
 
     download_label = ".pbix Dashboard" if out_type == "pbix" else ".pbip Bundle (ZIP)"
-    return render_template_string(
-        COMPLETE_HTML,
+    from flask import render_template
+    return render_template(
+        "complete.html",
         filename        = Path(out_path).name,
         file_type       = out_type,
         file_size       = size_str,
@@ -526,6 +534,7 @@ def complete():
 
 
 @app.route("/regenerate", methods=["POST"])
+@csrf_protect
 def regenerate():
     """Re-run the chart/preview phase, optionally applying user feedback."""
     sid = session.get("sid")
@@ -547,7 +556,7 @@ def regenerate():
     try:
         from dashboard.chart_selector import ChartSelector
         from dashboard.preview_renderer import PreviewRenderer
-        from dashboard.change_interpreter import ChangeInterpreter
+        from bi_automation.intent.parser import ChangeInterpreter
 
         interpreted_summary = ""
 

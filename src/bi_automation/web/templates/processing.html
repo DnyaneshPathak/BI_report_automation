@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+
+{% block title %}Analysing — BI Report Automation{% endblock %}
+
+{% block content %}
+<div class="proc-container">
+    <div class="proc-card">
+        <div class="proc-header">
+            <div class="spinner"></div>
+            <div class="proc-title">Analysing your data...</div>
+        </div>
+        <div class="steps-container">
+            <div class="step active" id="step-1">
+                <div class="step-icon">○</div>
+                Reading and parsing data
+            </div>
+            <div class="step" id="step-2">
+                <div class="step-icon">○</div>
+                Cleaning missing values and anomalies
+            </div>
+            <div class="step" id="step-3">
+                <div class="step-icon">○</div>
+                Detecting facts, dimensions, and KPIs
+            </div>
+            <div class="step" id="step-4">
+                <div class="step-icon">○</div>
+                Generating semantic models and insights
+            </div>
+            <div class="step" id="step-5">
+                <div class="step-icon">○</div>
+                Drafting dashboard layout
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block head %}
+<script>
+    // Pass Jinja variables to JavaScript safely
+    window.SESSION_ID = "{{ session_id }}";
+    window.PREVIEW_URL = "{{ url_for('preview') }}";
+</script>
+<script src="{{ url_for('static', filename='js/processing.js') }}" defer></script>
+{% endblock %}
