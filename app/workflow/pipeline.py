@@ -115,21 +115,94 @@ class AnalysisPipeline:
     ]
 
     def __init__(self, file_path: Path, progress_callback: Optional[Callable] = None, 
-                 selected_features: Optional[List[str]] = None, goal_description: str = ""):
+                 selected_features: Optional[List[str]] = None, goal_description: str = "",
+                 analysis_types: Optional[List[str]] = None):
         self.file_path         = file_path
         self.progress_callback = progress_callback or (lambda step, status, msg: None)
         self.selected_features = selected_features
         self.goal_description  = goal_description
+        self.analysis_types    = analysis_types or ["univariate", "bivariate", "multivariate", "statistical", "probability"]
         self.result            = PipelineResult()
         self.result.source_path = file_path
 
-    def run(self) -> PipelineResult:
+    def set_configuration(self, selected_features: List[str], analysis_types: List[str], goal_description: str = ""):
+        self.selected_features = selected_features
+        self.analysis_types    = analysis_types
+        self.goal_description  = goal_description
+
+    def run_phase1(self) -> PipelineResult:
         assert_local_only()
 
         ok, err = validate_file(self.file_path)
         if not ok:
             self.result.error = err
             return self.result
+
+        self.result.safe_filename = sanitize_filename(self.file_path.stem)
+
+        steps = [
+            ("Reading Excel",                self._step_ingest),
+            ("Detecting Data Types",         self._step_detect_types),
+            ("Cleaning Data",                self._step_clean),
+            ("Handling Missing Values",      self._step_missing),
+            ("Detecting Outliers",           self._step_outliers),
+            ("Profiling Data",               self._step_profile),
+        ]
+        self._execute_steps(steps)
+        return self.result
+
+    def run_phase2(self) -> PipelineResult:
+        if self.selected_features is not None:
+            valid_features = [f for f in self.selected_features if f in self.result.df_clean.columns]
+            if valid_features:
+                self.result.df_clean = self.result.df_clean[valid_features]
+
+        steps = []
+        if "univariate" in self.analysis_types:
+            steps.append(("Running Univariate Analysis",  self._step_univariate))
+        if "bivariate" in self.analysis_types:
+            steps.append(("Running Bivariate Analysis",   self._step_bivariate))
+        if "multivariate" in self.analysis_types:
+            steps.append(("Running Multivariate Analysis",self._step_multivariate))
+        if "statistical" in self.analysis_types:
+            steps.append(("Running Statistical Analysis", self._step_statistical))
+        if "probability" in self.analysis_types:
+            steps.append(("Running Probability Analysis", self._step_probability))
+            
+        steps.extend([
+            ("Generating Insights",          self._step_insights),
+            ("Detecting KPIs",               self._step_kpis),
+            ("Selecting Charts",             self._step_charts),
+            ("Generating DAX",               self._step_dax),
+            ("Building Preview",             self._step_preview),
+        ])
+        
+        self._execute_steps(steps)
+        self.result.success = True
+        return self.result
+
+    def _execute_steps(self, steps):
+        for step_name, step_fn in steps:
+            step = StepStatus(name=step_name, status="running")
+            self.result.steps.append(step)
+            self.progress_callback(step_name, "running", "")
+            t0 = time.time()
+            try:
+                step_fn()
+                step.status     = "done"
+                step.duration_s = round(time.time() - t0, 2)
+                self.progress_callback(step_name, "done", f"{step.duration_s}s")
+                import logging
+                logging.getLogger(__name__).info("[PASS] %s (%.1fs)", step_name, step.duration_s)
+            except Exception as exc:
+                step.status  = "error"
+                step.message = str(exc)
+                import logging
+                logging.getLogger(__name__).error("✗ %s: %s", step_name, exc, exc_info=True)
+                self.progress_callback(step_name, "error", str(exc))
+                if step_name in ("Reading Excel",):
+                    self.result.error = f"Pipeline aborted: {exc}"
+                    return
 
         self.result.safe_filename = sanitize_filename(self.file_path.stem)
 
@@ -188,11 +261,6 @@ class AnalysisPipeline:
         if not primary or primary not in ingestion.data_frames:
             raise RuntimeError("No usable data sheet found in the workbook.")
         self.result.df_clean = ingestion.data_frames[primary]
-        if self.selected_features is not None:
-            # Keep only the selected features that actually exist in the df
-            valid_features = [f for f in self.selected_features if f in self.result.df_clean.columns]
-            if valid_features:
-                self.result.df_clean = self.result.df_clean[valid_features]
         self.result.dashboard_title = self._infer_title(self.file_path.stem)
 
     def _step_profile(self):
@@ -295,7 +363,29 @@ class AnalysisPipeline:
             self.result.relevance_scores,
         )
         self.result.chart_specs = selector.select()
-        # DAX
+        
+        # Apply goal description if provided
+        if getattr(self, "goal_description", "").strip():
+            try:
+                from bi_automation.intent.parser import ChangeInterpreter
+                from dashboard.chart_selector import _populate_spec_data
+                
+                interpreter = ChangeInterpreter(self.result.profiles, self.result.chart_specs)
+                change = interpreter.interpret(self.goal_description)
+                new_specs = interpreter.apply(change, self.result.chart_specs)
+                
+                # Populate data for any new forced charts
+                for spec in new_specs:
+                    if not spec.data:
+                        spec = _populate_spec_data(
+                            spec, self.result.df_clean, self.result.profiles,
+                            self.result.col_stats, self.result.univariate, self.result.bivariate
+                        )
+                self.result.chart_specs = new_specs
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("Failed to apply goal description: %s", e)
+    def _step_dax(self):
         dax_gen = DAXGenerator(
             self.result.profiles,
             self.result.kpis,

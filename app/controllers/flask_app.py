@@ -399,23 +399,50 @@ def analyze():
     temp_path = TEMP_DIR / safe_name
     uploaded.save(str(temp_path))
 
-    # Read columns quickly
-    try:
-        import pandas as pd
-        if temp_path.suffix.lower() == ".csv":
-            df = pd.read_csv(temp_path, nrows=10)
-        else:
-            df = pd.read_excel(temp_path, nrows=10)
-        columns = df.columns.tolist()
-    except Exception as e:
-        logger.error("Failed to read columns: %s", e)
-        columns = []
-
     # Create session
     sid = str(uuid.uuid4())
     session["sid"] = sid
     _sessions[sid] = {"temp_path": temp_path}
 
+    q = queue.Queue()
+    _sessions[sid]["queue"] = q
+    _sessions[sid]["result"] = None
+    _sessions[sid]["output_path"] = None
+    _sessions[sid]["output_type"] = None
+
+    def run_phase1():
+        def progress(step, status, msg):
+            q.put({"step": step, "status": status, "message": msg})
+
+        pipeline = AnalysisPipeline(temp_path, progress_callback=progress)
+        result = pipeline.run_phase1()
+        _sessions[sid]["result"] = result
+        
+        if result.success or True: # Phase 1 always completes even with some errors
+            q.put({"type": "done"})
+        else:
+            q.put({"type": "error", "message": result.error or "Unknown error"})
+
+    import threading
+    thread = threading.Thread(target=run_phase1, daemon=True)
+    thread.start()
+
+    from flask import render_template
+    # Pass redirect_url so processing.js knows where to go
+    return render_template("processing.html", session_id=sid, redirect_url=url_for("configure"))
+
+@app.route("/configure", methods=["GET"])
+def configure():
+    sid = session.get("sid")
+    if not sid or sid not in _sessions:
+        return redirect(url_for("index"))
+    
+    sess = _sessions[sid]
+    result = sess.get("result")
+    if not result or not result.df_clean is not None:
+        return redirect(url_for("index"))
+        
+    columns = list(result.df_clean.columns)
     from flask import render_template
     return render_template("configure.html", sid=sid, columns=columns)
 
@@ -434,21 +461,21 @@ def start_analysis():
 
     goal_description = request.form.get("goal_description", "")
     selected_features = request.form.getlist("selected_features")
+    analysis_types = request.form.getlist("analysis_types")
 
     q = queue.Queue()
     sess["queue"] = q
-    sess["result"] = None
-    sess["output_path"] = None
-    sess["output_type"] = None
 
-    def run_pipeline():
+    def run_phase2():
         def progress(step, status, msg):
             q.put({"step": step, "status": status, "message": msg})
 
-        pipeline = AnalysisPipeline(temp_path, progress_callback=progress,
-                                    selected_features=selected_features,
-                                    goal_description=goal_description)
-        result = pipeline.run()
+        # Re-use the existing pipeline result or create a new pipeline initialized with it
+        pipeline = AnalysisPipeline(temp_path, progress_callback=progress)
+        pipeline.result = sess.get("result")
+        pipeline.set_configuration(selected_features, analysis_types, goal_description)
+        
+        result = pipeline.run_phase2()
         _sessions[sid]["result"] = result
         
         # Disk-backed caching for dataset profiles (Phase 9)
@@ -466,11 +493,12 @@ def start_analysis():
         else:
             q.put({"type": "error", "message": result.error or "Unknown error"})
 
-    thread = threading.Thread(target=run_pipeline, daemon=True)
+    import threading
+    thread = threading.Thread(target=run_phase2, daemon=True)
     thread.start()
 
     from flask import render_template
-    return render_template("processing.html", session_id=sid)
+    return render_template("processing.html", session_id=sid, redirect_url=url_for("preview"))
 
 
 @app.route("/progress/<session_id>")

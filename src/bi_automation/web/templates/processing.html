@@ -39,7 +39,7 @@
 <script>
     // Pass Jinja variables to JavaScript safely
     window.SESSION_ID = "{{ session_id }}";
-    window.PREVIEW_URL = "{{ url_for('preview') }}";
+    window.PREVIEW_URL = "{{ redirect_url }}";
 </script>
 <script src="{{ url_for('static', filename='js/processing.js') }}" defer></script>
 {% endblock %}

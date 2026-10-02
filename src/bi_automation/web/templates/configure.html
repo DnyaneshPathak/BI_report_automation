@@ -31,6 +31,49 @@
             </div>
         </div>
         
+        <div class="form-group" style="margin-bottom: 2rem;">
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Select Analysis Types</label>
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Choose the specific analytical techniques to apply to your selected features.</p>
+            
+            <div style="display: flex; flex-direction: column; gap: 12px; background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="checkbox" name="analysis_types" value="univariate" checked style="width: 18px; height: 18px; margin-top: 2px;">
+                    <div>
+                        <strong style="display: block; font-size: 1rem;">Univariate analysis</strong>
+                        <span style="font-size: 0.85rem; color: #64748b;">Analyze each feature individually (distributions, central tendencies, variance).</span>
+                    </div>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="checkbox" name="analysis_types" value="bivariate" checked style="width: 18px; height: 18px; margin-top: 2px;">
+                    <div>
+                        <strong style="display: block; font-size: 1rem;">Bivariate analysis</strong>
+                        <span style="font-size: 0.85rem; color: #64748b;">Analyze relationships and correlations between two features.</span>
+                    </div>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="checkbox" name="analysis_types" value="multivariate" checked style="width: 18px; height: 18px; margin-top: 2px;">
+                    <div>
+                        <strong style="display: block; font-size: 1rem;">Multivariate analysis</strong>
+                        <span style="font-size: 0.85rem; color: #64748b;">Analyze complex interactions among three or more features.</span>
+                    </div>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="checkbox" name="analysis_types" value="statistical" checked style="width: 18px; height: 18px; margin-top: 2px;">
+                    <div>
+                        <strong style="display: block; font-size: 1rem;">Statistical analysis</strong>
+                        <span style="font-size: 0.85rem; color: #64748b;">Perform formal statistical testing (ANOVA, Chi-Square, t-tests).</span>
+                    </div>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="checkbox" name="analysis_types" value="probability" checked style="width: 18px; height: 18px; margin-top: 2px;">
+                    <div>
+                        <strong style="display: block; font-size: 1rem;">Probability analysis</strong>
+                        <span style="font-size: 0.85rem; color: #64748b;">Calculate conditional probabilities, Bayes rules, and transition matrices.</span>
+                    </div>
+                </label>
+            </div>
+        </div>
+        
         <div style="text-align: right;">
             <button type="submit" class="btn-analyze" style="padding: 1rem 2.5rem; font-size: 1.1rem;">Generate BI Report →</button>
         </div>
