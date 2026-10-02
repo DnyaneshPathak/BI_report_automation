@@ -114,9 +114,12 @@ class AnalysisPipeline:
         "Building Preview",
     ]
 
-    def __init__(self, file_path: Path, progress_callback: Optional[Callable] = None):
+    def __init__(self, file_path: Path, progress_callback: Optional[Callable] = None, 
+                 selected_features: Optional[List[str]] = None, goal_description: str = ""):
         self.file_path         = file_path
         self.progress_callback = progress_callback or (lambda step, status, msg: None)
+        self.selected_features = selected_features
+        self.goal_description  = goal_description
         self.result            = PipelineResult()
         self.result.source_path = file_path
 
@@ -185,6 +188,11 @@ class AnalysisPipeline:
         if not primary or primary not in ingestion.data_frames:
             raise RuntimeError("No usable data sheet found in the workbook.")
         self.result.df_clean = ingestion.data_frames[primary]
+        if self.selected_features is not None:
+            # Keep only the selected features that actually exist in the df
+            valid_features = [f for f in self.selected_features if f in self.result.df_clean.columns]
+            if valid_features:
+                self.result.df_clean = self.result.df_clean[valid_features]
         self.result.dashboard_title = self._infer_title(self.file_path.stem)
 
     def _step_profile(self):

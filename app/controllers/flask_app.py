@@ -399,18 +399,55 @@ def analyze():
     temp_path = TEMP_DIR / safe_name
     uploaded.save(str(temp_path))
 
+    # Read columns quickly
+    try:
+        import pandas as pd
+        if temp_path.suffix.lower() == ".csv":
+            df = pd.read_csv(temp_path, nrows=10)
+        else:
+            df = pd.read_excel(temp_path, nrows=10)
+        columns = df.columns.tolist()
+    except Exception as e:
+        logger.error("Failed to read columns: %s", e)
+        columns = []
+
     # Create session
     sid = str(uuid.uuid4())
     session["sid"] = sid
-    q = queue.Queue()
-    _sessions[sid] = {"queue": q, "result": None, "output_path": None, "output_type": None}
+    _sessions[sid] = {"temp_path": temp_path}
 
-    # Run pipeline in background thread
+    from flask import render_template
+    return render_template("configure.html", sid=sid, columns=columns)
+
+
+@app.route("/start_analysis", methods=["POST"])
+@csrf_protect
+def start_analysis():
+    sid = request.form.get("sid") or session.get("sid")
+    if not sid or sid not in _sessions:
+        return redirect(url_for("index"))
+    
+    sess = _sessions[sid]
+    temp_path = sess.get("temp_path")
+    if not temp_path or not temp_path.exists():
+        return redirect(url_for("index"))
+
+    goal_description = request.form.get("goal_description", "")
+    selected_features = request.form.getlist("selected_features")
+
+    q = queue.Queue()
+    sess["queue"] = q
+    sess["result"] = None
+    sess["output_path"] = None
+    sess["output_type"] = None
+
     def run_pipeline():
         def progress(step, status, msg):
             q.put({"step": step, "status": status, "message": msg})
 
-        pipeline = AnalysisPipeline(temp_path, progress_callback=progress)
+        pipeline = AnalysisPipeline(temp_path, progress_callback=progress,
+                                    selected_features=selected_features,
+                                    goal_description=goal_description)
         result = pipeline.run()
         _sessions[sid]["result"] = result
         
@@ -432,7 +469,6 @@ def analyze():
     thread = threading.Thread(target=run_pipeline, daemon=True)
     thread.start()
 
-    # Render processing screen using Flask's render_template
     from flask import render_template
     return render_template("processing.html", session_id=sid)
 

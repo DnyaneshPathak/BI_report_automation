@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+
+{% block title %}Configure Analysis — BI Report Automation{% endblock %}
+
+{% block content %}
+<div class="hero" style="max-width:800px; margin: 40px auto; padding: 2rem;">
+    <h1 class="hero-title" style="font-size: 2.2rem;">Configure Your <span>Analysis</span></h1>
+    <p class="hero-sub" style="margin-bottom: 2rem;">Select the features (columns) you want to include in your BI report and provide a brief description of your goals.</p>
+
+    <form id="configure-form" action="{{ url_for('start_analysis') }}" method="POST">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="sid" value="{{ sid }}">
+        
+        <div class="form-group" style="margin-bottom: 2rem;">
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Analysis Goal / Description <span style="color:#e11d48">*</span></label>
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Describe what you are trying to achieve (e.g., "Analyze revenue by region" or "Find the root cause of customer churn").</p>
+            <textarea name="goal_description" rows="4" style="width: 100%; padding: 1rem; border: 1px solid #cbd5e1; border-radius: 8px; font-family: inherit; font-size: 1rem;" required placeholder="Describe your analytical goal here..."></textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 2rem;">
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Select Features to Analyze</label>
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Uncheck columns you want to completely ignore (like internal IDs or PII).</p>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; max-height: 300px; overflow-y: auto;">
+                {% for col in columns %}
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="{{ col }}" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">{{ col }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <div style="text-align: right;">
+            <button type="submit" class="btn-analyze" style="padding: 1rem 2.5rem; font-size: 1.1rem;">Generate BI Report →</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -90,37 +90,43 @@ class PreviewRenderer:
             ctype = spec.chart_type
             data = spec.data
             
+            x_col = spec.x_column or ""
+            y_col = spec.y_column or ""
             # Base option
             option = {
                 "color": CHART_COLORS,
                 "tooltip": {"trigger": "axis" if ctype in ("line", "bar", "multi_line") else "item"},
-                "grid": {"left": "3%", "right": "4%", "bottom": "3%", "containLabel": True},
-                "xAxis": {},
-                "yAxis": {},
+                "grid": {"left": "3%", "right": "4%", "bottom": "15%", "containLabel": True},
+                "xAxis": {
+                    "name": x_col,
+                    "nameLocation": "middle",
+                    "nameGap": 35,
+                    "axisLabel": {"interval": "auto", "rotate": 30, "hideOverlap": True}
+                },
+                "yAxis": {
+                    "name": y_col,
+                    "nameLocation": "middle",
+                    "nameGap": 45
+                },
                 "series": []
             }
 
             if ctype == "line" and data.get("labels"):
-                option["xAxis"] = {"type": "category", "data": data["labels"]}
-                option["yAxis"] = {"type": "value"}
+                option["xAxis"].update({"type": "category", "data": data["labels"]})
+                option["yAxis"].update({"type": "value"})
                 option["series"] = [{"data": data["values"], "type": "line", "smooth": True}]
                 
             elif ctype == "multi_line" and data:
-                # Assuming data is a pivot dict: { "time_labels": [...], "series": { "catA": [...], "catB": [...] } }
-                # Let's check catalog.py. It passes mv.pivot. 
-                # wait, multivariate sets data = mv.pivot. 
-                # Let's just do a basic implementation or fallback if data structure differs
                 labels = list(data.keys())
                 if labels and isinstance(data[labels[0]], dict):
-                    # Data is dict of dicts: { "Jan": {"CatA": 10, "CatB": 20}, ... }
                     cat_keys = set()
                     for v in data.values():
                         cat_keys.update(v.keys())
                     cat_list = list(cat_keys)
                     
                     option["legend"] = {"data": cat_list, "bottom": 0}
-                    option["xAxis"] = {"type": "category", "data": labels}
-                    option["yAxis"] = {"type": "value"}
+                    option["xAxis"].update({"type": "category", "data": labels})
+                    option["yAxis"].update({"type": "value"})
                     series = []
                     for cat in cat_list:
                         series.append({
@@ -131,13 +137,13 @@ class PreviewRenderer:
                     option["series"] = series
 
             elif ctype == "bar" and data.get("labels"):
-                option["xAxis"] = {"type": "category", "data": data["labels"]}
-                option["yAxis"] = {"type": "value"}
+                option["xAxis"].update({"type": "category", "data": data["labels"]})
+                option["yAxis"].update({"type": "value"})
                 option["series"] = [{"data": data["values"], "type": "bar"}]
 
             elif ctype == "histogram" and data.get("labels"):
-                option["xAxis"] = {"type": "category", "data": data["labels"]}
-                option["yAxis"] = {"type": "value"}
+                option["xAxis"].update({"type": "category", "data": data["labels"]})
+                option["yAxis"].update({"type": "value"})
                 option["series"] = [{"data": data["values"], "type": "bar", "itemStyle": {"color": PALETTE["accent"]}, "barCategoryGap": "0%"}]
 
             elif ctype == "donut" and data.get("labels"):

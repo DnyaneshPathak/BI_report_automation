@@ -113,10 +113,8 @@ class ExcelReader:
     def _load_csv(self, result: WorkbookIngestionResult) -> None:
         """Fast CSV loading with pyarrow backend."""
         try:
-            # PyArrow engine is much faster and uses less memory
             df = pd.read_csv(
                 self.file_path,
-                engine="pyarrow",
                 na_values=NULL_STRINGS,
                 keep_default_na=True
             )
