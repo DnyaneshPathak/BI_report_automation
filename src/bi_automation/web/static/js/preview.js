@@ -90,3 +90,33 @@ function regenerate() {
       btn.disabled = false;
     });
 }
+
+// ── Initialize ECharts ───────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.ECHART_SPECS && typeof echarts !== 'undefined') {
+    const charts = [];
+    Object.keys(window.ECHART_SPECS).forEach(chartId => {
+      const el = document.getElementById(chartId);
+      if (el) {
+        const myChart = echarts.init(el);
+        myChart.setOption(window.ECHART_SPECS[chartId]);
+        charts.push(myChart);
+      }
+    });
+
+    // Handle resizing window and changing tabs
+    window.addEventListener('resize', () => {
+      charts.forEach(c => c.resize());
+    });
+    
+    // When a tab is clicked, charts in that tab might need resizing because 
+    // they were initialized while `display: none`
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setTimeout(() => {
+          charts.forEach(c => c.resize());
+        }, 100);
+      });
+    });
+  }
+});

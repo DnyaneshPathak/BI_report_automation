@@ -52,7 +52,7 @@ from analysis.insight_engine import InsightEngine, Insight, AnalyticalRelevanceS
 from dashboard.kpi_detector import KPIDetector, KPI
 from dashboard.chart_selector import ChartSelector, ChartSpec
 from dashboard.dax_generator import DAXGenerator, DAXMeasure
-from dashboard.preview_renderer import PreviewRenderer
+from bi_automation.web.preview_renderer import PreviewRenderer
 from config import TEMP_DIR
 
 logger = logging.getLogger(__name__)

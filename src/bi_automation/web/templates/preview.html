@@ -5,6 +5,10 @@
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/preview.css') }}">
 <meta name="csrf-token" content="{{ csrf_token() }}">
+<script src="{{ url_for('static', filename='js/echarts.min.js') }}"></script>
+<script>
+  window.ECHART_SPECS = {{ echarts_specs_json|safe }};
+</script>
 <script src="{{ url_for('static', filename='js/preview.js') }}" defer></script>
 {% endblock %}
 

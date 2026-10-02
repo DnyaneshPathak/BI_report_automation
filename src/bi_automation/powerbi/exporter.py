@@ -159,14 +159,18 @@ class Exporter:
         return bundle_path
 
     def _patch_embedded_source(self, project_dir: Path, data_path: Path) -> None:
+        """Replace the absolute path with a generic placeholder to prevent path leaks."""
         bim_path = project_dir / "DataSet" / "model.bim"
         if not bim_path.exists():
             return
         try:
             text = bim_path.read_text(encoding="utf-8")
+            # The previous step _patch_model_source replaced {SOURCE_PATH} with self.excel_source_path.
+            # Now we replace self.excel_source_path with a generic, non-leaking placeholder.
+            generic_path = "C:\\PowerBI_Bundle\\Data\\cleaned_data.xlsx"
             text = text.replace(
                 str(self.excel_source_path).replace("\\", "\\\\"),
-                str(data_path).replace("\\", "\\\\"),
+                generic_path.replace("\\", "\\\\"),
             )
             bim_path.write_text(text, encoding="utf-8")
         except Exception:

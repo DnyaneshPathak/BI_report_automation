@@ -413,6 +413,17 @@ def analyze():
         pipeline = AnalysisPipeline(temp_path, progress_callback=progress)
         result = pipeline.run()
         _sessions[sid]["result"] = result
+        
+        # Disk-backed caching for dataset profiles (Phase 9)
+        cache_file = TEMP_DIR / f"cache_{sid}.pkl"
+        try:
+            import pickle
+            with open(cache_file, "wb") as f:
+                pickle.dump(result, f)
+            logger.info("Pipeline result cached to disk: %s", cache_file)
+        except Exception as exc:
+            logger.warning("Failed to cache result to disk: %s", exc)
+            
         if result.success:
             q.put({"type": "done"})
         else:
@@ -452,14 +463,31 @@ def progress_stream(session_id: str):
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+def _get_session_result(sid: str) -> Optional[Any]:
+    if sid not in _sessions:
+        _sessions[sid] = {}
+    sess = _sessions[sid]
+    result = sess.get("result")
+    if not result:
+        cache_file = TEMP_DIR / f"cache_{sid}.pkl"
+        if cache_file.exists():
+            try:
+                import pickle
+                with open(cache_file, "rb") as f:
+                    result = pickle.load(f)
+                sess["result"] = result
+            except Exception:
+                pass
+    return result
+
+
 @app.route("/preview")
 def preview():
     from bi_automation.security.csrf import get_token
     sid = session.get("sid")
-    if not sid or sid not in _sessions:
+    if not sid:
         return redirect(url_for("index"))
-    sess = _sessions[sid]
-    result: Optional[PipelineResult] = sess.get("result")
+    result = _get_session_result(sid)
     if not result or not result.success:
         err = result.error if result else "Processing failed"
         return f"<h2 style='font-family:Inter,sans-serif;padding:60px;color:#dc2626'>Error: {err}</h2><a href='/'>Try Again</a>"
@@ -474,10 +502,9 @@ def preview():
 @csrf_protect
 def approve():
     sid = session.get("sid")
-    if not sid or sid not in _sessions:
+    if not sid:
         return jsonify({"success": False, "error": "Session expired"})
-    sess   = _sessions[sid]
-    result = sess.get("result")
+    result = _get_session_result(sid)
     if not result:
         return jsonify({"success": False, "error": "No analysis result"})
 
@@ -508,10 +535,11 @@ def approve():
 @app.route("/complete")
 def complete():
     sid = session.get("sid")
-    if not sid or sid not in _sessions:
+    if not sid:
         return redirect(url_for("index"))
-    sess      = _sessions[sid]
-    result    = sess.get("result")
+    
+    result = _get_session_result(sid)
+    sess   = _sessions.get(sid, {})
     out_path  = sess.get("output_path")
     out_type  = sess.get("output_type", "pbip_bundle")
 
@@ -538,10 +566,10 @@ def complete():
 def regenerate():
     """Re-run the chart/preview phase, optionally applying user feedback."""
     sid = session.get("sid")
-    if not sid or sid not in _sessions:
+    if not sid:
         return jsonify({"success": False, "error": "Session expired"})
-    sess   = _sessions[sid]
-    result = sess.get("result")
+    
+    result = _get_session_result(sid)
     if not result:
         return jsonify({"success": False, "error": "No analysis result"})
 
@@ -555,7 +583,7 @@ def regenerate():
 
     try:
         from dashboard.chart_selector import ChartSelector
-        from dashboard.preview_renderer import PreviewRenderer
+        from bi_automation.web.preview_renderer import PreviewRenderer
         from bi_automation.intent.parser import ChangeInterpreter
 
         interpreted_summary = ""
