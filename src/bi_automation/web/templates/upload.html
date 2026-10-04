@@ -1,0 +1,53 @@
+{% extends "layout.html" %}
+
+{% block title %}Upload Data — BI Report Automation{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1 class="hero-title">Automate your <span>Power BI</span> reports instantly.</h1>
+    <p class="hero-sub">Upload your messy Excel data. We clean it, analyze it, and generate a professional Power BI dashboard template locally. Your data never leaves your machine.</p>
+
+    <!-- The form that submits the file -->
+    <form id="upload-form" action="{{ url_for('analyze') }}" method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <div class="upload-card" id="drop-zone">
+            <div class="upload-icon">📊</div>
+            <div class="upload-title">Drop your Excel file here</div>
+            <div class="upload-sub">Supports .xlsx, .csv (Max 200MB)</div>
+            
+            <button type="button" class="btn-choose">Choose File</button>
+            <input type="file" id="file-input" name="file" accept=".xlsx,.xls,.xlsm,.csv" required>
+            
+            <div class="file-selected" id="file-name"></div>
+            <button type="submit" class="btn-analyze" id="btn-submit">Start Analysis →</button>
+        </div>
+    </form>
+
+    <div class="privacy-banner">
+        <div>🔒</div>
+        <div><strong>100% Local Processing:</strong> This tool runs entirely on your machine. No data is sent to the cloud.</div>
+    </div>
+
+    <div class="features">
+        <div class="feat">
+            <div class="feat-icon">🧹</div>
+            <div class="feat-title">Auto-Cleaning</div>
+            <div class="feat-desc">Handles missing values and bad formats</div>
+        </div>
+        <div class="feat">
+            <div class="feat-icon">📈</div>
+            <div class="feat-title">Smart KPIs</div>
+            <div class="feat-desc">Detects measures and dimensions automatically</div>
+        </div>
+        <div class="feat">
+            <div class="feat-icon">⚡</div>
+            <div class="feat-title">DAX Generation</div>
+            <div class="feat-desc">Writes the formulas for you</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block head %}
+<script src="{{ url_for('static', filename='js/upload.js') }}" defer></script>
+{% endblock %}

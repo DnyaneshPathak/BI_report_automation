@@ -13,6 +13,8 @@ All data is processed locally. No data is sent externally.
 
 from __future__ import annotations
 
+from bi_automation.security.csrf import csrf_protect
+
 import json
 import logging
 import os
@@ -34,13 +36,13 @@ from config import (
     SECRET_KEY, OUTPUT_DIR, TEMP_DIR, PALETTE,
 )
 from app.workflow.pipeline import AnalysisPipeline, PipelineResult
-from powerbi.model_builder import ModelBuilder
-from powerbi.exporter import Exporter
+from bi_automation.powerbi.model_builder import ModelBuilder
+from bi_automation.powerbi.exporter import Exporter
 from security.privacy import cleanup_temp_files
 
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, template_folder="../../templates", static_folder="../../static")
+app = Flask(__name__, template_folder="../../src/bi_automation/web/templates", static_folder="../../src/bi_automation/web/static")
 app.secret_key = SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024   # 200 MB
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -56,38 +58,7 @@ BG      = PALETTE["background"]
 SURFACE = PALETTE["surface"]
 
 
-def _populate_spec_data(spec, df, profiles, col_stats, univariate, bivariate):
-    """
-    Try to populate spec.data for a force-built ChartSpec that has no data yet.
-    Falls back gracefully — an empty data dict just means the chart shows as unavailable.
-    """
-    try:
-        import pandas as pd
-        from dashboard.chart_selector import ChartSpec
 
-        x, y = spec.x_column, spec.y_column
-        ct   = spec.chart_type
-
-        if ct in ("bar", "donut", "treemap") and x in df.columns:
-            vc = df[x].value_counts().head(15)
-            spec.data = {"labels": list(vc.index.astype(str)), "values": list(vc.values.tolist())}
-
-        elif ct == "histogram" and x in df.columns:
-            col_data = pd.to_numeric(df[x], errors="coerce").dropna()
-            counts, edges = __import__("numpy").histogram(col_data, bins=20)
-            labels = [f"{edges[i]:.0f}–{edges[i+1]:.0f}" for i in range(len(counts))]
-            spec.data = {"labels": labels, "values": counts.tolist()}
-
-        elif ct == "scatter" and x in df.columns and y and y in df.columns:
-            spec.data = {"pearson_r": ""}
-
-        elif ct in ("line", "multi_line") and x in df.columns and y and y in df.columns:
-            ts = df.groupby(x)[y].sum().head(50)
-            spec.data = {"labels": [str(k) for k in ts.index], "values": ts.values.tolist()}
-
-    except Exception:
-        pass
-    return spec
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -100,8 +71,6 @@ UPLOAD_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Excel → Power BI Automation</title>
 <meta name="description" content="Automated local Excel to Power BI dashboard generator. 100% local processing — your data never leaves your machine.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--navy:#1B2A4A;--blue:#2563EB;--accent:#3B82F6;--bg:#F8FAFC;--surface:#FFFFFF;--border:#E2E8F0;--text:#0F172A;--muted:#64748B;}
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -152,6 +121,7 @@ footer{text-align:center;padding:20px;color:var(--muted);font-size:0.72rem;borde
   <p class="hero-sub">Upload any Excel workbook. Our system automatically analyses your data, generates insights, and builds a professional Power BI dashboard — entirely on your machine.</p>
 
   <form id="upload-form" action="/analyze" method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
     <div class="upload-card" id="drop-zone">
       <input type="file" name="excel_file" id="file-input" accept=".xlsx,.xls,.xlsm">
       <div class="upload-icon">📂</div>
@@ -219,7 +189,6 @@ PROCESSING_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <title>Analysing — BI Report Automation</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--navy:#1B2A4A;--blue:#2563EB;--bg:#F8FAFC;--surface:#FFFFFF;--border:#E2E8F0;--text:#0F172A;--muted:#64748B;--success:#059669;}
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -326,7 +295,6 @@ COMPLETE_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <title>Dashboard Ready — BI Report Automation</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--navy:#1B2A4A;--blue:#2563EB;--bg:#F8FAFC;--surface:#FFFFFF;--border:#E2E8F0;--text:#0F172A;--muted:#64748B;--success:#059669;}
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -380,15 +348,17 @@ h1{font-size:1.8rem;font-weight:800;color:var(--navy);margin-bottom:10px;}
 
 @app.route("/")
 def index():
-    return UPLOAD_HTML
+    from flask import render_template
+    return render_template("upload.html")
 
 
 @app.route("/analyze", methods=["POST"])
+@csrf_protect
 def analyze():
-    if "excel_file" not in request.files:
+    if "file" not in request.files:
         return redirect(url_for("index"))
 
-    uploaded = request.files["excel_file"]
+    uploaded = request.files["file"]
     if not uploaded or uploaded.filename == "":
         return redirect(url_for("index"))
 
@@ -401,28 +371,113 @@ def analyze():
     # Create session
     sid = str(uuid.uuid4())
     session["sid"] = sid
-    q = queue.Queue()
-    _sessions[sid] = {"queue": q, "result": None, "output_path": None, "output_type": None}
+    _sessions[sid] = {"temp_path": temp_path}
 
-    # Run pipeline in background thread
-    def run_pipeline():
+    q = queue.Queue()
+    _sessions[sid]["queue"] = q
+    _sessions[sid]["result"] = None
+    _sessions[sid]["output_path"] = None
+    _sessions[sid]["output_type"] = None
+
+    def run_phase1():
         def progress(step, status, msg):
             q.put({"step": step, "status": status, "message": msg})
 
         pipeline = AnalysisPipeline(temp_path, progress_callback=progress)
-        result = pipeline.run()
+        result = pipeline.run_phase1()
         _sessions[sid]["result"] = result
+        
+        if result.success or True: # Phase 1 always completes even with some errors
+            q.put({"type": "done"})
+        else:
+            q.put({"type": "error", "message": result.error or "Unknown error"})
+
+    import threading
+    thread = threading.Thread(target=run_phase1, daemon=True)
+    thread.start()
+
+    from flask import render_template
+    # Pass redirect_url so processing.js knows where to go
+    return render_template("processing.html", session_id=sid, redirect_url=url_for("configure"))
+
+@app.route("/configure", methods=["GET"])
+def configure():
+    sid = session.get("sid")
+    if not sid or sid not in _sessions:
+        return redirect(url_for("index"))
+    
+    sess = _sessions[sid]
+    result = sess.get("result")
+    if not result or not result.df_clean is not None:
+        return redirect(url_for("index"))
+        
+    columns = list(result.df_clean.columns)
+    from flask import render_template
+    return render_template("configure.html", sid=sid, columns=columns)
+
+
+@app.route("/start_analysis", methods=["POST"])
+@csrf_protect
+def start_analysis():
+    sid = request.form.get("sid") or session.get("sid")
+    if not sid or sid not in _sessions:
+        return redirect(url_for("index"))
+    
+    sess = _sessions[sid]
+    temp_path = sess.get("temp_path")
+    if not temp_path or not temp_path.exists():
+        return redirect(url_for("index"))
+
+    goal_description = request.form.get("goal_description", "")
+    selected_features = request.form.getlist("selected_features")
+    analysis_types = request.form.getlist("analysis_types")
+
+    # Aggregate per-feature descriptions
+    feature_goals = []
+    for col in selected_features:
+        desc = request.form.get(f"desc_{col}")
+        if desc and desc.strip():
+            feature_goals.append(f"For {col}: {desc.strip()}")
+    
+    if feature_goals:
+        goal_description += " | " + " | ".join(feature_goals)
+
+    q = queue.Queue()
+    sess["queue"] = q
+
+    def run_phase2():
+        def progress(step, status, msg):
+            q.put({"step": step, "status": status, "message": msg})
+
+        # Re-use the existing pipeline result or create a new pipeline initialized with it
+        pipeline = AnalysisPipeline(temp_path, progress_callback=progress)
+        pipeline.result = sess.get("result")
+        pipeline.set_configuration(selected_features, analysis_types, goal_description)
+        
+        result = pipeline.run_phase2()
+        _sessions[sid]["result"] = result
+        
+        # Disk-backed caching for dataset profiles (Phase 9)
+        cache_file = TEMP_DIR / f"cache_{sid}.pkl"
+        try:
+            import pickle
+            with open(cache_file, "wb") as f:
+                pickle.dump(result, f)
+            logger.info("Pipeline result cached to disk: %s", cache_file)
+        except Exception as exc:
+            logger.warning("Failed to cache result to disk: %s", exc)
+            
         if result.success:
             q.put({"type": "done"})
         else:
             q.put({"type": "error", "message": result.error or "Unknown error"})
 
-    thread = threading.Thread(target=run_pipeline, daemon=True)
+    import threading
+    thread = threading.Thread(target=run_phase2, daemon=True)
     thread.start()
 
-    # Render processing screen using Flask's render_template_string
-    # (this ensures tojson and all Jinja2 filters are available)
-    return render_template_string(PROCESSING_HTML, steps=AnalysisPipeline.STEPS, session_id=sid)
+    from flask import render_template
+    return render_template("processing.html", session_id=sid, redirect_url=url_for("preview"))
 
 
 @app.route("/progress/<session_id>")
@@ -451,26 +506,48 @@ def progress_stream(session_id: str):
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+def _get_session_result(sid: str) -> Optional[Any]:
+    if sid not in _sessions:
+        _sessions[sid] = {}
+    sess = _sessions[sid]
+    result = sess.get("result")
+    if not result:
+        cache_file = TEMP_DIR / f"cache_{sid}.pkl"
+        if cache_file.exists():
+            try:
+                import pickle
+                with open(cache_file, "rb") as f:
+                    result = pickle.load(f)
+                sess["result"] = result
+            except Exception:
+                pass
+    return result
+
+
 @app.route("/preview")
 def preview():
+    from bi_automation.security.csrf import get_token
     sid = session.get("sid")
-    if not sid or sid not in _sessions:
+    if not sid:
         return redirect(url_for("index"))
-    sess = _sessions[sid]
-    result: Optional[PipelineResult] = sess.get("result")
+    result = _get_session_result(sid)
     if not result or not result.success:
         err = result.error if result else "Processing failed"
         return f"<h2 style='font-family:Inter,sans-serif;padding:60px;color:#dc2626'>Error: {err}</h2><a href='/'>Try Again</a>"
-    return result.preview_html
+    
+    from flask import render_template
+    
+    context = result.preview_html  # this is now a dict
+    return render_template("preview.html", **context)
 
 
 @app.route("/approve", methods=["POST"])
+@csrf_protect
 def approve():
     sid = session.get("sid")
-    if not sid or sid not in _sessions:
+    if not sid:
         return jsonify({"success": False, "error": "Session expired"})
-    sess   = _sessions[sid]
-    result = sess.get("result")
+    result = _get_session_result(sid)
     if not result:
         return jsonify({"success": False, "error": "No analysis result"})
 
@@ -490,6 +567,7 @@ def approve():
             excel_source_path = result.source_path,
         )
         out_path, out_type = exporter.export()
+        sess = _sessions.setdefault(sid, {})
         sess["output_path"] = out_path
         sess["output_type"] = out_type
         return jsonify({"success": True})
@@ -501,10 +579,11 @@ def approve():
 @app.route("/complete")
 def complete():
     sid = session.get("sid")
-    if not sid or sid not in _sessions:
+    if not sid:
         return redirect(url_for("index"))
-    sess      = _sessions[sid]
-    result    = sess.get("result")
+    
+    result = _get_session_result(sid)
+    sess   = _sessions.get(sid, {})
     out_path  = sess.get("output_path")
     out_type  = sess.get("output_type", "pbip_bundle")
 
@@ -515,8 +594,9 @@ def complete():
     size_str = f"{size_kb} KB" if size_kb < 1024 else f"{size_kb//1024:.1f} MB"
 
     download_label = ".pbix Dashboard" if out_type == "pbix" else ".pbip Bundle (ZIP)"
-    return render_template_string(
-        COMPLETE_HTML,
+    from flask import render_template
+    return render_template(
+        "complete.html",
         filename        = Path(out_path).name,
         file_type       = out_type,
         file_size       = size_str,
@@ -526,13 +606,14 @@ def complete():
 
 
 @app.route("/regenerate", methods=["POST"])
+@csrf_protect
 def regenerate():
     """Re-run the chart/preview phase, optionally applying user feedback."""
     sid = session.get("sid")
-    if not sid or sid not in _sessions:
+    if not sid:
         return jsonify({"success": False, "error": "Session expired"})
-    sess   = _sessions[sid]
-    result = sess.get("result")
+    
+    result = _get_session_result(sid)
     if not result:
         return jsonify({"success": False, "error": "No analysis result"})
 
@@ -546,8 +627,8 @@ def regenerate():
 
     try:
         from dashboard.chart_selector import ChartSelector
-        from dashboard.preview_renderer import PreviewRenderer
-        from dashboard.change_interpreter import ChangeInterpreter
+        from bi_automation.web.preview_renderer import PreviewRenderer
+        from bi_automation.intent.parser import ChangeInterpreter
 
         interpreted_summary = ""
 

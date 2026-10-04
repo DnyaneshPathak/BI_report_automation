@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configure Analysis — BI Report Automation</title>
+    <meta name="description" content="Automated local Excel to Power BI dashboard generator. 100% local processing — your data never leaves your machine.">
+    <!-- Local CSS -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    
+</head>
+<body>
+    <nav>
+        <div class="nav-brand">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="3" y1="9" x2="21" y2="9"></line>
+                <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
+            BI Report Automation
+        </div>
+        <div class="nav-badge">100% Local (Offline)</div>
+    </nav>
+    <main>
+        
+<div class="hero" style="max-width:800px; margin: 40px auto; padding: 2rem;">
+    <h1 class="hero-title" style="font-size: 2.2rem;">Configure Your <span>Analysis</span></h1>
+    <p class="hero-sub" style="margin-bottom: 2rem;">Select the features (columns) you want to include in your BI report and provide a brief description of your goals.</p>
+
+    <form id="configure-form" action="/start_analysis" method="POST">
+        <input type="hidden" name="_csrf_token" value="a326b76de4dc3798cff8ae8b7c9906f771fa47d71982770b77914fa27b3b2762">
+        <input type="hidden" name="sid" value="c528c15c-1761-48ba-9036-3599e5c79301">
+        
+        <div class="form-group" style="margin-bottom: 2rem;">
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Analysis Goal / Description <span style="color:#e11d48">*</span></label>
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Describe what you are trying to achieve (e.g., "Analyze revenue by region" or "Find the root cause of customer churn").</p>
+            <textarea name="goal_description" rows="4" style="width: 100%; padding: 1rem; border: 1px solid #cbd5e1; border-radius: 8px; font-family: inherit; font-size: 1rem;" required placeholder="Describe your analytical goal here..."></textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 2rem;">
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Select Features to Analyze</label>
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Uncheck columns you want to completely ignore (like internal IDs or PII).</p>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; max-height: 300px; overflow-y: auto;">
+                
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="Order ID" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">Order ID</span>
+                </label>
+                
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="Order Date" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">Order Date</span>
+                </label>
+                
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="Region" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">Region</span>
+                </label>
+                
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="Product" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">Product</span>
+                </label>
+                
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="Category" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">Category</span>
+                </label>
+                
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="Channel" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">Channel</span>
+                </label>
+                
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="Sales" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">Sales</span>
+                </label>
+                
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="Cost" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">Cost</span>
+                </label>
+                
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="Profit" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">Profit</span>
+                </label>
+                
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="Quantity" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">Quantity</span>
+                </label>
+                
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                    <input type="checkbox" name="selected_features" value="Customer ID" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                    <span style="font-size: 0.95rem;">Customer ID</span>
+                </label>
+                
+            </div>
+        </div>
+        
+        <div style="text-align: right;">
+            <button type="submit" class="btn-analyze" style="padding: 1rem 2.5rem; font-size: 1.1rem;">Generate BI Report →</button>
+        </div>
+    </form>
+</div>
+
+    </main>
+    <footer>
+        &copy; 2026 BI Report Automation. Built for offline, local data engineering.
+    </footer>
+</body>
+</html>

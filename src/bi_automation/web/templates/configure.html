@@ -1,0 +1,85 @@
+{% extends "layout.html" %}
+
+{% block title %}Configure Analysis — BI Report Automation{% endblock %}
+
+{% block content %}
+<div class="hero" style="max-width:800px; margin: 40px auto; padding: 2rem;">
+    <h1 class="hero-title" style="font-size: 2.2rem;">Configure Your <span>Analysis</span></h1>
+    <p class="hero-sub" style="margin-bottom: 2rem;">Select the features (columns) you want to include in your BI report and provide a brief description of your goals.</p>
+
+    <form id="configure-form" action="{{ url_for('start_analysis') }}" method="POST">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="sid" value="{{ sid }}">
+        
+        <div class="form-group" style="margin-bottom: 2rem;">
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Analysis Goal / Description <span style="color:#e11d48">*</span></label>
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Describe what you are trying to achieve (e.g., "Analyze revenue by region" or "Find the root cause of customer churn").</p>
+            <textarea name="goal_description" rows="4" style="width: 100%; padding: 1rem; border: 1px solid #cbd5e1; border-radius: 8px; font-family: inherit; font-size: 1rem;" required placeholder="Describe your analytical goal here..."></textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 2rem;">
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Select Features to Analyze</label>
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Uncheck columns you want to completely ignore (like internal IDs or PII).</p>
+            
+            <div style="display: flex; flex-direction: column; gap: 15px; background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; max-height: 400px; overflow-y: auto;">
+                {% for col in columns %}
+                <div style="padding: 10px; border: 1px solid #f1f5f9; border-radius: 6px; background: #f8fafc;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; margin-bottom: 8px;">
+                        <input type="checkbox" name="selected_features" value="{{ col }}" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                        <span style="font-size: 1rem;">{{ col }}</span>
+                    </label>
+                    <input type="text" name="desc_{{ col }}" placeholder="Describe specific analysis for {{ col }} (optional)..." style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 4px; font-family: inherit; font-size: 0.95rem;">
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 2rem;">
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Select Analysis Types</label>
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Choose the specific analytical techniques to apply to your selected features.</p>
+            
+            <div style="display: flex; flex-direction: column; gap: 12px; background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="checkbox" name="analysis_types" value="univariate" checked style="width: 18px; height: 18px; margin-top: 2px;">
+                    <div>
+                        <strong style="display: block; font-size: 1rem;">Univariate analysis</strong>
+                        <span style="font-size: 0.85rem; color: #64748b;">Analyze each feature individually (distributions, central tendencies, variance).</span>
+                    </div>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="checkbox" name="analysis_types" value="bivariate" checked style="width: 18px; height: 18px; margin-top: 2px;">
+                    <div>
+                        <strong style="display: block; font-size: 1rem;">Bivariate analysis</strong>
+                        <span style="font-size: 0.85rem; color: #64748b;">Analyze relationships and correlations between two features.</span>
+                    </div>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="checkbox" name="analysis_types" value="multivariate" checked style="width: 18px; height: 18px; margin-top: 2px;">
+                    <div>
+                        <strong style="display: block; font-size: 1rem;">Multivariate analysis</strong>
+                        <span style="font-size: 0.85rem; color: #64748b;">Analyze complex interactions among three or more features.</span>
+                    </div>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="checkbox" name="analysis_types" value="statistical" checked style="width: 18px; height: 18px; margin-top: 2px;">
+                    <div>
+                        <strong style="display: block; font-size: 1rem;">Statistical analysis</strong>
+                        <span style="font-size: 0.85rem; color: #64748b;">Perform formal statistical testing (ANOVA, Chi-Square, t-tests).</span>
+                    </div>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="checkbox" name="analysis_types" value="probability" checked style="width: 18px; height: 18px; margin-top: 2px;">
+                    <div>
+                        <strong style="display: block; font-size: 1rem;">Probability analysis</strong>
+                        <span style="font-size: 0.85rem; color: #64748b;">Calculate conditional probabilities, Bayes rules, and transition matrices.</span>
+                    </div>
+                </label>
+            </div>
+        </div>
+        
+        <div style="text-align: right; padding-bottom: 2rem;">
+            <button type="submit" style="display: inline-block; padding: 1rem 2.5rem; font-size: 1.1rem; background: linear-gradient(135deg, #2563eb, #3b82f6); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">Start Analysis →</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
