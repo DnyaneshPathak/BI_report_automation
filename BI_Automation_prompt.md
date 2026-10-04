@@ -2520,3 +2520,3324 @@ The most important non-negotiable requirement is:
 > **The uploaded Excel file and every value derived from it must remain on the user's local machine at all times. No business data may be transmitted to any external server, API, cloud platform, AI provider, analytics service, or third-party organization.**
 
 Start building the complete working system now.
+
+
+
+4/10/26 : GPT Prompt : 
+
+# ROLE
+
+Act as a **Principal Automation Engineer, Senior Python Architect, Senior Data Analyst, Power BI Developer, BI Solution Architect, QA Engineer, and AI/LLM Prompt Engineering Specialist**.
+
+You are working inside an existing Python project named approximately:
+
+`BI_Report_Automation`
+
+This is NOT a greenfield project.
+
+You must carefully inspect the existing repository, understand the current architecture, fix the existing defects, refactor only where necessary, and upgrade the application into a robust **AI-powered Excel-to-Power-BI dashboard automation system**.
+
+Do NOT only explain the problems.
+
+You must:
+
+1. inspect the code,
+2. identify root causes,
+3. modify the code,
+4. run tests,
+5. verify behavior,
+6. fix regressions,
+7. validate the generated Power BI project,
+8. preserve existing working functionality,
+9. document all important changes.
+
+---
+
+# PRIMARY PROJECT GOAL
+
+The application should follow this workflow:
+
+```text
+Excel Upload
+     ↓
+Data Validation
+     ↓
+Schema Detection
+     ↓
+Data Profiling
+     ↓
+Data Cleaning
+     ↓
+Data Type Detection
+     ↓
+Feature Role Detection
+     ↓
+Statistical Analysis
+     ↓
+User Requirement Understanding
+     ↓
+AI Dashboard Planning
+     ↓
+Semantic Model Planning
+     ↓
+KPI Planning
+     ↓
+Chart Planning
+     ↓
+Dashboard Layout Planning
+     ↓
+Interactive HTML Preview
+     ↓
+User Confirmation / Modification
+     ↓
+Power BI Project Generation
+     ↓
+Download
+```
+
+The most important requirement is:
+
+> The dashboard must be generated according to the USER'S REQUIREMENT and the DATA, not according to generic hard-coded chart rules.
+
+---
+
+# IMPORTANT SCOPE DEFINITION
+
+Do NOT interpret the requirement "support all Power BI functionality" as "rebuild Microsoft's entire Power BI ecosystem."
+
+There are two different capability categories.
+
+## CATEGORY A — MUST SUPPORT
+
+Implement or architect strong parity with **Power BI Desktop report-authoring and semantic-modeling capabilities** that can reasonably be represented programmatically.
+
+This includes:
+
+- Excel ingestion
+- multiple Excel sheets
+- data profiling
+- data cleaning
+- data transformation
+- column typing
+- categorical/continuous/date/ID detection
+- relationships
+- semantic models
+- measures
+- calculations
+- KPIs
+- charts
+- filters
+- slicers
+- drill-down
+- drillthrough
+- sorting
+- Top N
+- hierarchies
+- tooltips
+- bookmarks where technically representable
+- navigation
+- multi-page reports
+- tables
+- matrices
+- themes
+- conditional formatting
+- cross-filtering
+- cross-highlighting where supported
+- report/page/visual filters
+- responsive layout planning
+- dashboard/report pages
+- Power BI project generation
+- PBIP
+- PBIR
+- TMDL/TMSL compatibility where required
+
+## CATEGORY B — DO NOT FAKE
+
+Some Power BI features depend on Microsoft cloud infrastructure.
+
+Examples:
+
+- Power BI Service workspaces
+- Microsoft tenant authentication
+- publishing to workspace
+- gateways
+- scheduled cloud refresh
+- subscriptions
+- organizational sharing
+- Fabric deployment pipelines
+- tenant administration
+- audit logs
+- Microsoft Purview governance
+- streaming infrastructure
+- alerts
+- cloud collaboration
+
+Do NOT pretend that these exist locally.
+
+Instead create an extensible interface such as:
+
+```text
+integrations/
+    powerbi_service/
+```
+
+and maintain a capability matrix:
+
+```text
+SUPPORTED_LOCAL
+SUPPORTED_PBIP
+PARTIAL
+REQUIRES_POWER_BI_SERVICE
+NOT_IMPLEMENTED
+```
+
+The core application must work without Microsoft credentials.
+
+---
+
+# CRITICAL EXISTING BUGS ALREADY IDENTIFIED
+
+The following issues have already been discovered in the existing application.
+
+Treat them as confirmed high-priority defects and verify them yourself before changing code.
+
+---
+
+# BUG 1 — PIPELINE EXECUTES TWICE
+
+Important file:
+
+`app/workflow/pipeline.py`
+
+The method:
+
+`_execute_steps()`
+
+currently executes the requested pipeline steps and then accidentally contains logic that reconstructs/reruns a full hard-coded pipeline.
+
+Because of this, Phase 2 can reload the original Excel dataset after the user selected only specific columns.
+
+Example:
+
+User selects:
+
+```text
+Order ID
+Order Date
+Region
+```
+
+and selects only:
+
+```text
+Univariate Analysis
+```
+
+but later the pipeline again contains all original columns and runs:
+
+```text
+Bivariate
+Multivariate
+Statistical
+Probability
+```
+
+This is incorrect.
+
+## REQUIRED FIX
+
+`_execute_steps()` must ONLY execute the steps passed to it.
+
+Desired conceptual implementation:
+
+```python
+def _execute_steps(self, steps):
+    for step_name, step_fn in steps:
+        try:
+            step_fn()
+        except Exception as exc:
+            self.result.error = f"{step_name} failed: {exc}"
+
+            if step_name == "Reading Excel":
+                return False
+
+    return True
+```
+
+Do not blindly copy this code.
+
+Adapt it correctly to the application's architecture and logging/result system.
+
+Remove the accidental duplicate pipeline execution.
+
+---
+
+# BUG 2 — WRONG PHASE 1 ORDER
+
+Current processing is conceptually similar to:
+
+```text
+Excel
+↓
+Detect Types
+↓
+Clean
+↓
+Missing values
+↓
+Outliers
+↓
+Profile
+```
+
+This is logically incorrect if cleaning depends on correct type information.
+
+Change the conceptual flow to:
+
+```text
+Excel ingestion
+↓
+Initial validation
+↓
+Schema/type detection
+↓
+Profiling
+↓
+Cleaning
+↓
+Missing-value handling
+↓
+Outlier analysis
+↓
+Updated profiling
+```
+
+Then stop Phase 1.
+
+Do NOT perform all dashboard analyses before the user configuration is known.
+
+---
+
+# BUG 3 — USER FEATURE SELECTION IS LOST
+
+When Phase 2 starts and a user selected specific features/columns:
+
+1. filter the dataframe,
+2. create a `.copy()`,
+3. recreate metadata,
+4. recreate column profiles,
+5. recreate feature classifications,
+6. clear previous analyses,
+7. execute only the requested analyses.
+
+Conceptually:
+
+```python
+df = df[selected_valid_columns].copy()
+```
+
+Then rebuild all dependent metadata.
+
+Never reuse metadata belonging to the original dataframe.
+
+---
+
+# BUG 4 — OLD ANALYSIS RESULTS LEAK INTO NEW EXECUTION
+
+Before Phase 2 analysis, clear all results that can contain old dataset information.
+
+Examples:
+
+```text
+univariate
+bivariate
+multivariate
+statistical_tests
+probability_results
+chart_specs
+kpis
+dashboard_spec
+```
+
+Implement a proper reset method rather than scattering resets throughout the code.
+
+Example concept:
+
+```python
+result.reset_analysis_state()
+```
+
+---
+
+# BUG 5 — `if result.success or True`
+
+Inspect:
+
+`app/controllers/flask_app.py`
+
+There is logic equivalent to:
+
+```python
+if result.success or True:
+```
+
+This condition is permanently true.
+
+Remove this behavior.
+
+Use proper error handling:
+
+```python
+if result.success:
+```
+
+Failures must remain failures.
+
+Never allow the application to silently continue when the pipeline failed.
+
+---
+
+# BUG 6 — DATA QUALITY FIELD NAME MISMATCH
+
+The pipeline and UI use inconsistent names.
+
+Possible pipeline fields:
+
+```text
+missing_pct
+duplicate_pct
+outlier_count
+```
+
+while frontend/rendering logic may expect:
+
+```text
+missing_cells
+duplicates
+outliers
+```
+
+Create a canonical model.
+
+For example:
+
+```python
+class DataQualitySummary:
+    total_rows
+    total_columns
+    missing_cells
+    missing_percentage
+    duplicate_rows
+    duplicate_percentage
+    outlier_count
+```
+
+Use exactly the same schema throughout:
+
+```text
+analysis
+→ controller
+→ API
+→ frontend
+→ preview
+```
+
+Never silently default an unknown metric to zero.
+
+---
+
+# BUG 7 — FAKE `Count` AND `Frequency` COLUMNS
+
+The existing chart generator creates specifications such as:
+
+```text
+x = Region
+y = Count
+```
+
+or:
+
+```text
+x = Sales
+y = Frequency
+```
+
+But `Count` and `Frequency` may not exist in the actual dataset.
+
+The Power BI exporter then treats them as real columns.
+
+This is fundamentally incorrect.
+
+## REPLACE THE CURRENT CHART MODEL
+
+Do NOT represent charts using only:
+
+```text
+x_column
+y_column
+```
+
+Create a semantic visual specification.
+
+For example:
+
+```python
+class VisualSpec:
+    id: str
+    title: str
+
+    chart_type: str
+
+    dimension: str | None
+    dimension2: str | None
+
+    measure: str | None
+    measure2: str | None
+
+    aggregation: str | None
+
+    legend: str | None
+
+    time_grain: str | None
+
+    sort_by: str | None
+    sort_direction: str | None
+
+    top_n: int | None
+
+    filters: list
+
+    page: str | None
+
+    tooltip_fields: list
+
+    drilldown_fields: list
+
+    drillthrough_page: str | None
+
+    conditional_formatting: dict | None
+```
+
+For category count:
+
+```text
+dimension = Region
+measure = Order ID
+aggregation = count
+```
+
+or a semantic row-count measure.
+
+Never create a fictional physical column named `Count`.
+
+For histogram:
+
+use histogram/binning semantics.
+
+Do NOT pretend that `Frequency` exists as a physical dataset field.
+
+---
+
+# BUG 8 — PREVIEW AND POWER BI USE DIFFERENT LOGIC
+
+Currently HTML/ECharts preview may calculate:
+
+```text
+Average Sales by Channel
+```
+
+while Power BI generation may interpret the same chart as:
+
+```text
+SUM(Sales)
+```
+
+This is unacceptable.
+
+Implement ONE canonical object:
+
+`DashboardSpec`
+
+The following components must consume the same specification:
+
+```text
+HTML Preview
+Power BI Report Generator
+Validation Engine
+User Modification Engine
+```
+
+Architecture:
+
+```text
+                ┌→ HTML/ECharts renderer
+DashboardSpec ──┼→ Power BI renderer
+                └→ Validation engine
+```
+
+Neither renderer may reinterpret the business meaning of a chart.
+
+---
+
+# CREATE A SINGLE SOURCE OF TRUTH
+
+Implement a strongly typed model.
+
+Prefer:
+
+- Python dataclasses, or
+- Pydantic models
+
+Example conceptual architecture:
+
+```python
+class KPIIntent:
+    name: str
+    measure: str
+    aggregation: str
+    format: str | None
+    target: float | None
+
+class VisualSpec:
+    ...
+
+class PageSpec:
+    name: str
+    visuals: list[VisualSpec]
+    filters: list
+    slicers: list
+    layout: dict
+
+class DashboardSpec:
+    title: str
+    description: str
+    kpis: list[KPIIntent]
+    pages: list[PageSpec]
+    global_filters: list
+    theme: dict
+```
+
+Validate it before preview generation.
+
+Validate it again before PBIP generation.
+
+---
+
+# BUG 9 — NATURAL LANGUAGE INTENT PARSER IS TOO WEAK
+
+Important area:
+
+`src/bi_automation/intent/`
+
+The current parser appears to rely too much on basic keyword matching.
+
+A requirement such as:
+
+```text
+Show total sales, total profit, sales by region,
+monthly sales trend and top 10 products by sales.
+```
+
+must produce structured intent approximately equivalent to:
+
+```json
+{
+  "kpis": [
+    {
+      "metric": "Sales",
+      "aggregation": "sum",
+      "title": "Total Sales"
+    },
+    {
+      "metric": "Profit",
+      "aggregation": "sum",
+      "title": "Total Profit"
+    }
+  ],
+
+  "visuals": [
+    {
+      "title": "Sales by Region",
+      "chart_type": "bar",
+      "dimension": "Region",
+      "measure": "Sales",
+      "aggregation": "sum"
+    },
+
+    {
+      "title": "Monthly Sales Trend",
+      "chart_type": "line",
+      "dimension": "Order Date",
+      "measure": "Sales",
+      "aggregation": "sum",
+      "time_grain": "month"
+    },
+
+    {
+      "title": "Top 10 Products by Sales",
+      "chart_type": "bar",
+      "dimension": "Product",
+      "measure": "Sales",
+      "aggregation": "sum",
+      "top_n": 10,
+      "sort_direction": "desc"
+    }
+  ]
+}
+```
+
+---
+
+# DESIGN A BETTER INTENT ENGINE
+
+Create a two-stage system.
+
+## STAGE 1 — AI / NLP INTERPRETATION
+
+Interpret:
+
+- requested KPIs
+- metrics
+- dimensions
+- aggregations
+- comparisons
+- trends
+- periods
+- rankings
+- Top N
+- filters
+- chart requests
+- page requests
+- drill requests
+- business objective
+- requested formatting
+
+## STAGE 2 — DETERMINISTIC VALIDATION
+
+Never trust raw LLM output directly.
+
+Validate:
+
+```text
+Does column exist?
+Is metric numeric?
+Is dimension categorical?
+Is requested date column actually date-like?
+Is aggregation valid?
+Is Top N valid?
+Does chart support requested fields?
+```
+
+If the LLM suggests:
+
+```text
+measure = Revenue
+```
+
+but the dataset contains:
+
+```text
+Sales Amount
+```
+
+perform semantic column matching.
+
+If confidence is insufficient, do NOT invent a column.
+
+Return a meaningful warning.
+
+---
+
+# COLUMN SEMANTIC MATCHING
+
+Implement column normalization.
+
+Examples:
+
+```text
+sales
+Sales
+SALES
+total_sales
+Sales Amount
+sales_amount
+Revenue
+Net Sales
+```
+
+Do NOT automatically assume these are all identical.
+
+Use:
+
+1. exact match
+2. normalized match
+3. alias dictionary
+4. semantic similarity
+5. data-type compatibility
+6. confidence score
+
+Return the final mapping and confidence.
+
+---
+
+# FEATURE ROLE DETECTION
+
+Each column should have a richer semantic role.
+
+Possible roles:
+
+```text
+identifier
+categorical_dimension
+numeric_measure
+date
+datetime
+geography
+currency
+percentage
+boolean
+text
+ordinal
+continuous_numeric
+discrete_numeric
+latitude
+longitude
+email
+url
+unknown
+```
+
+Do not infer roles only from pandas dtype.
+
+Use:
+
+- column name
+- dtype
+- cardinality
+- uniqueness
+- distribution
+- sample values
+
+---
+
+# IDENTIFIER DETECTION
+
+Avoid generating charts such as:
+
+```text
+Sales by Customer ID
+```
+
+when Customer ID has almost one value per row unless explicitly requested.
+
+Possible identifier indicators:
+
+```text
+high uniqueness
+ID-like name
+sequential numbers
+UUID pattern
+order number
+transaction ID
+customer ID
+invoice ID
+```
+
+Identifiers should usually not become chart dimensions automatically.
+
+---
+
+# ANALYSIS ENGINE
+
+The project must continue supporting:
+
+## Univariate analysis
+
+Numeric:
+
+- count
+- mean
+- median
+- mode where useful
+- standard deviation
+- variance
+- min
+- max
+- range
+- quartiles
+- IQR
+- skewness
+- kurtosis
+- percentiles
+- missing values
+- outliers
+- histogram statistics
+
+Categorical:
+
+- frequency
+- percentage
+- cardinality
+- mode
+- rare categories
+
+Date:
+
+- min date
+- max date
+- timespan
+- frequency
+- trends
+- gaps
+
+---
+
+# BIVARIATE ANALYSIS
+
+Support appropriate combinations:
+
+```text
+numeric vs numeric
+numeric vs categorical
+categorical vs categorical
+date vs numeric
+date vs categorical
+```
+
+Possible analysis:
+
+- correlation
+- covariance
+- grouped aggregation
+- cross-tabulation
+- contingency analysis
+- temporal aggregation
+
+---
+
+# MULTIVARIATE ANALYSIS
+
+Support useful exploratory analysis where appropriate.
+
+Possible techniques:
+
+- correlation matrix
+- multiple grouping
+- pivot-like analysis
+- multivariate comparisons
+- interaction detection
+- contribution analysis
+
+Do NOT perform machine learning unless explicitly required.
+
+Do NOT scale data merely because ML libraries are available.
+
+---
+
+# STATISTICAL ANALYSIS
+
+Apply tests only when assumptions are reasonable.
+
+Possible tests:
+
+- Pearson correlation
+- Spearman correlation
+- chi-square
+- t-test
+- ANOVA
+- normality checks where useful
+
+Do NOT blindly run every test on every column.
+
+Explain applicability.
+
+---
+
+# PROBABILITY ANALYSIS
+
+Support meaningful probability/distribution analysis.
+
+Potential distributions:
+
+- normal
+- binomial
+- Poisson
+- empirical distribution
+
+Only use them where appropriate.
+
+Do not force-fit distributions.
+
+---
+
+# BUSINESS KPI ENGINE
+
+Do NOT automatically convert every numeric column into a KPI.
+
+Infer useful business KPIs from:
+
+- column semantics
+- user requirement
+- business relationships
+- analysis results
+
+Examples:
+
+Sales dataset:
+
+```text
+Total Sales
+Total Profit
+Profit Margin
+Order Count
+Average Order Value
+Quantity Sold
+```
+
+HR dataset:
+
+```text
+Employee Count
+Average Salary
+Attrition Rate
+Average Tenure
+```
+
+Finance dataset:
+
+```text
+Revenue
+Expenses
+Gross Profit
+Net Profit
+Margin
+Variance
+```
+
+E-commerce dataset:
+
+```text
+Revenue
+Orders
+Customers
+Average Order Value
+Units
+```
+
+User requirement always has higher priority than generic heuristics.
+
+---
+
+# KPI FORMULA ENGINE
+
+Where appropriate, support derived KPIs.
+
+Example:
+
+```text
+Profit Margin = Profit / Sales
+```
+
+But validate denominator.
+
+Handle:
+
+- divide-by-zero
+- nulls
+- formatting
+
+Prefer explicit reusable measures.
+
+---
+
+# POWER BI MEASURE ENGINE
+
+Build a proper semantic layer.
+
+Do NOT calculate everything as preaggregated Python output if it should remain interactive in Power BI.
+
+Support generation of DAX measures where appropriate.
+
+Examples:
+
+```DAX
+Total Sales = SUM('Sales'[Sales])
+
+Total Profit = SUM('Sales'[Profit])
+
+Order Count = DISTINCTCOUNT('Sales'[Order ID])
+
+Profit Margin = DIVIDE([Total Profit], [Total Sales])
+```
+
+Generate measure names safely.
+
+Escape table/column names correctly.
+
+Never generate invalid DAX.
+
+---
+
+# DATE TABLE
+
+When date analytics is required, create a proper date/calendar table where appropriate.
+
+Potential fields:
+
+```text
+Date
+Year
+Quarter
+Month Number
+Month
+Year-Month
+Week
+Day
+Day Name
+```
+
+Create relationships with fact date columns when reasonable.
+
+Allow:
+
+```text
+Year → Quarter → Month → Date
+```
+
+drill hierarchy.
+
+---
+
+# MULTI-SHEET EXCEL
+
+The application must support Excel files containing multiple sheets.
+
+Do NOT simply merge sheets.
+
+Analyze each sheet.
+
+Determine:
+
+```text
+fact table
+dimension table
+lookup table
+unrelated table
+```
+
+Infer possible relationships using:
+
+- matching names
+- data types
+- uniqueness
+- referential overlap
+- cardinality
+
+Examples:
+
+```text
+Orders.CustomerID → Customers.CustomerID
+
+Orders.ProductID → Products.ProductID
+```
+
+Require high confidence before automatically creating relationships.
+
+Avoid ambiguous many-to-many relationships unless explicitly supported.
+
+---
+
+# SEMANTIC MODEL
+
+Create a proper Power BI semantic model.
+
+Support:
+
+- tables
+- columns
+- correct types
+- relationships
+- measures
+- hierarchies
+- formats
+- hidden technical columns where appropriate
+- sort-by-column
+- display folders where reasonable
+
+Prefer star-schema concepts when the input supports them.
+
+Do NOT unnecessarily normalize a simple single-table dataset.
+
+---
+
+# DASHBOARD AI PLANNER
+
+Create a dedicated component such as:
+
+```text
+dashboard/
+    planner.py
+```
+
+The planner should consider:
+
+```text
+user intent
++
+data schema
++
+feature roles
++
+statistics
++
+business semantics
++
+visualization best practices
+```
+
+Output only a valid `DashboardSpec`.
+
+---
+
+# DASHBOARD PLANNING PRIORITY
+
+Chart priority must be:
+
+```text
+1. User explicitly requested it
+2. Required to answer user's business question
+3. Business-important KPI
+4. Important trend/comparison
+5. Statistically useful supporting insight
+6. Generic exploratory chart
+```
+
+Do NOT fill a dashboard with charts merely because they are statistically possible.
+
+---
+
+# VISUAL RECOMMENDATION ENGINE
+
+Choose charts based on analytical objective.
+
+## Comparison
+
+Use:
+
+```text
+bar chart
+column chart
+clustered bar/column
+```
+
+## Time trends
+
+Use:
+
+```text
+line chart
+area chart
+combo chart
+```
+
+## Composition
+
+Use carefully:
+
+```text
+stacked chart
+100% stacked chart
+treemap
+donut
+pie
+```
+
+Avoid pie/donut when category count is excessive.
+
+## Distribution
+
+Use:
+
+```text
+histogram
+box-plot-style alternative if supported
+```
+
+## Relationship
+
+Use:
+
+```text
+scatter chart
+bubble chart
+```
+
+## Detail
+
+Use:
+
+```text
+table
+matrix
+```
+
+## Performance
+
+Use:
+
+```text
+KPI
+card
+gauge where meaningful
+```
+
+## Contribution
+
+Use:
+
+```text
+waterfall
+```
+
+## Process
+
+Use:
+
+```text
+funnel
+```
+
+when semantically valid.
+
+## Geography
+
+Use map-related visuals only when valid geographical information exists.
+
+Do not classify arbitrary text as geography.
+
+---
+
+# VISUAL TYPES TO SUPPORT
+
+Architect support for at least:
+
+```text
+card
+multi-row card
+KPI
+bar
+stacked bar
+100% stacked bar
+column
+stacked column
+100% stacked column
+line
+area
+stacked area
+combo
+pie
+donut
+treemap
+scatter
+bubble
+waterfall
+funnel
+table
+matrix
+gauge
+histogram
+map-compatible specification
+```
+
+If a visualization cannot safely be generated into PBIR, mark it as partially supported rather than generating corrupted files.
+
+---
+
+# TOP N MUST ACTUALLY WORK
+
+The current system may parse `top_n` but fail to apply it.
+
+Fix this.
+
+Example:
+
+```text
+Top 5 products by Sales
+```
+
+must produce:
+
+```text
+dimension = Product
+measure = Sales
+aggregation = SUM
+sort = Sales descending
+TopN = 5
+```
+
+Preview and Power BI must both show exactly five ranked products unless ties/Power BI behavior is explicitly configured otherwise.
+
+---
+
+# FILTER ENGINE
+
+Support:
+
+```text
+report-level filters
+page-level filters
+visual-level filters
+```
+
+Represent filters semantically.
+
+Example:
+
+```json
+{
+  "column": "Region",
+  "operator": "in",
+  "values": ["West", "North"]
+}
+```
+
+Support where appropriate:
+
+```text
+equals
+not equals
+contains
+greater than
+less than
+between
+in
+not in
+relative date
+Top N
+```
+
+---
+
+# SLICERS
+
+Generate slicers when useful.
+
+Examples:
+
+```text
+Date
+Region
+Category
+Department
+Product Category
+Channel
+```
+
+Avoid creating slicers for:
+
+- transaction IDs
+- very high-cardinality fields
+- raw measures
+
+unless explicitly requested.
+
+---
+
+# INTERACTIVE CROSS FILTERING
+
+Where supported by PBIR/report definitions, preserve Power BI visual interaction semantics.
+
+At minimum design the internal architecture for:
+
+```text
+filter
+highlight
+none
+```
+
+for visual-to-visual interaction.
+
+---
+
+# DRILL-DOWN
+
+Create hierarchies when appropriate.
+
+Examples:
+
+```text
+Year
+Quarter
+Month
+Date
+```
+
+or:
+
+```text
+Country
+State
+City
+```
+
+or:
+
+```text
+Category
+Subcategory
+Product
+```
+
+Support drilldown only if the hierarchy is semantically valid.
+
+---
+
+# DRILLTHROUGH
+
+Architect support for drillthrough pages.
+
+Example:
+
+```text
+Overview
+    ↓
+Product detail
+```
+
+User selecting:
+
+```text
+Laptop
+```
+
+can navigate to a detail page filtered to Laptop.
+
+Implement only according to valid PBIR structures.
+
+---
+
+# TOOLTIPS
+
+Support tooltip fields.
+
+Example:
+
+Sales by Region:
+
+```text
+Region
+Sales
+Profit
+Profit Margin
+Order Count
+```
+
+Support rich report-page tooltip architecture where technically appropriate.
+
+---
+
+# BOOKMARKS AND NAVIGATION
+
+Architect support for:
+
+```text
+page navigation
+bookmark navigation
+reset filter button
+back button
+```
+
+Do not create nonfunctional placeholder buttons.
+
+Only include them in generated PBIP when technically valid.
+
+---
+
+# MULTI-PAGE REPORT GENERATION
+
+Do not force everything onto one dashboard page.
+
+AI planner should decide when multiple pages are useful.
+
+Possible structure:
+
+```text
+Page 1 — Executive Overview
+
+KPIs
+high-level trend
+business breakdown
+slicers
+
+Page 2 — Sales Analysis
+
+regional sales
+product sales
+category analysis
+channel analysis
+
+Page 3 — Profitability
+
+profit
+margin
+cost
+waterfall
+profit drivers
+
+Page 4 — Detailed Data
+
+matrix
+table
+drillthrough/detail
+```
+
+Pages must depend on dataset and user requirements.
+
+Never use hard-coded page names when they are semantically inappropriate.
+
+---
+
+# CONDITIONAL FORMATTING
+
+Architect support for:
+
+```text
+background color rules
+font color rules
+data bars
+icons
+thresholds
+positive/negative indicators
+variance highlighting
+```
+
+Use semantic rules.
+
+Example:
+
+```text
+Profit < 0 → negative indicator
+Profit > 0 → positive indicator
+```
+
+Do NOT hardcode a particular color palette into business logic.
+
+Keep themes configurable.
+
+---
+
+# THEME ENGINE
+
+Support configurable report themes.
+
+Create an application default professional theme, but separate:
+
+```text
+theme specification
+```
+
+from:
+
+```text
+business logic
+```
+
+Allow:
+
+```text
+light
+dark
+corporate
+custom
+```
+
+but do not modify visual meaning when a theme changes.
+
+---
+
+# DASHBOARD LAYOUT ENGINE
+
+Create a layout planner.
+
+Layout rules:
+
+1. KPIs near top.
+2. Most important visual gets priority.
+3. Slicers grouped consistently.
+4. Avoid overlaps.
+5. Avoid excessive whitespace.
+6. Maintain alignment.
+7. Use reasonable visual dimensions.
+8. Maintain consistent spacing.
+9. Avoid too many visuals.
+10. Use multiple pages instead of overcrowding.
+
+Create deterministic layout coordinates.
+
+Do not randomly place visuals.
+
+---
+
+# INSIGHT ENGINE
+
+In addition to charts, generate short data-driven insights.
+
+Examples:
+
+```text
+West region contributes 34% of total sales.
+
+Profit margin decreased during Q3.
+
+Product A is the highest revenue contributor.
+
+Channel X has high revenue but low margin.
+```
+
+Insights must come from actual calculations.
+
+Never hallucinate insights.
+
+---
+
+# PREVIEW REQUIREMENTS
+
+The web preview must show the same business meaning as the Power BI output.
+
+Preview should support, where practical:
+
+- KPI cards
+- charts
+- filtering
+- slicers
+- tooltip
+- sorting
+- pagination for tables
+- multi-page dashboard navigation
+- Top N
+- basic drill behavior
+- theme
+
+Again:
+
+```text
+DashboardSpec
+```
+
+must drive the preview.
+
+Do NOT independently generate a second dashboard interpretation.
+
+---
+
+# USER MODIFICATION AFTER PREVIEW
+
+This is a critical feature.
+
+After preview, user must be able to request changes such as:
+
+```text
+Remove pie chart.
+
+Change Sales by Region to horizontal bar.
+
+Show top 5 products instead of top 10.
+
+Add Profit Margin KPI.
+
+Move the sales trend to first page.
+
+Add Category slicer.
+
+Remove Cost chart.
+
+Create another page for Customer Analysis.
+```
+
+These instructions must modify the existing `DashboardSpec`.
+
+Do NOT rerun everything from scratch unless required.
+
+Architecture:
+
+```text
+Original DashboardSpec
+        +
+Modification Intent
+        ↓
+DashboardSpec Patcher
+        ↓
+Validation
+        ↓
+New Preview
+```
+
+---
+
+# USER INTENT MUST OVERRIDE DEFAULT RECOMMENDATIONS
+
+Example:
+
+If statistical engine prefers a scatterplot but user explicitly requests:
+
+```text
+Show Sales by Region as bar chart
+```
+
+use bar chart as long as it is technically valid.
+
+Only reject user instructions when:
+
+```text
+column doesn't exist
+chart is impossible
+instruction is ambiguous enough to produce wrong data
+Power BI format does not support requested feature
+```
+
+Return a useful explanation instead of silently changing intent.
+
+---
+
+# POWER BI EXPORT FORMAT
+
+Modernize the exporter.
+
+Target a valid Power BI Project structure.
+
+Prefer modern:
+
+```text
+PBIP
++
+PBIR for report definition
++
+TMDL for semantic model
+```
+
+where supported by current Power BI Desktop.
+
+Do not invent schemas.
+
+Use official Microsoft schemas and current PBIP conventions.
+
+Conceptual target:
+
+```text
+GeneratedDashboard/
+│
+├── GeneratedDashboard.pbip
+│
+├── GeneratedDashboard.Report/
+│   ├── definition.pbir
+│   ├── definition/
+│   │   ├── pages/
+│   │   ├── visuals/
+│   │   └── ...
+│   └── StaticResources/
+│
+└── GeneratedDashboard.SemanticModel/
+    ├── definition.pbism
+    └── definition/
+        ├── model.tmdl
+        ├── database.tmdl
+        ├── relationships.tmdl
+        └── tables/
+```
+
+The exact structure MUST follow current Microsoft specifications.
+
+If the installed Power BI version requires TMSL instead of TMDL, support an explicit compatibility mode.
+
+Never generate mutually incompatible combinations.
+
+---
+
+# PBIR RULE
+
+Do not generate a fake or guessed PBIR JSON structure.
+
+Before implementing each PBIR component:
+
+1. inspect current Microsoft schema,
+2. inspect existing valid PBIP examples if available,
+3. build schema-valid output,
+4. validate JSON,
+5. validate references.
+
+---
+
+# SEMANTIC MODEL RULE
+
+Never reference a field that doesn't exist.
+
+Before generating Power BI:
+
+```text
+For every visual:
+    validate dimension
+    validate measure
+    validate aggregation
+    validate legend
+    validate sort field
+    validate tooltip fields
+    validate drill fields
+    validate filter fields
+```
+
+If even one reference is invalid:
+
+```text
+DO NOT silently export.
+```
+
+Return a structured validation error.
+
+---
+
+# CREATE A POWER BI VALIDATOR
+
+Implement something like:
+
+```text
+powerbi/
+    validator.py
+```
+
+Validation should include:
+
+```text
+project structure
+required files
+valid JSON
+valid semantic-model references
+missing fields
+duplicate IDs
+missing visual references
+invalid measure names
+invalid relationships
+broken filters
+invalid page references
+invalid drillthrough references
+invalid sort columns
+```
+
+Create:
+
+```python
+validate_before_export()
+```
+
+Power BI package generation should fail cleanly if validation fails.
+
+---
+
+# DUPLICATED APPLICATION ARCHITECTURE
+
+The project currently appears to have parallel implementations:
+
+```text
+analysis/
+dashboard/
+app/
+```
+
+and:
+
+```text
+src/bi_automation/
+```
+
+The runtime may follow something similar to:
+
+```text
+START.bat
+→ main.py
+→ src/bi_automation/web/app.py
+→ app/controllers/flask_app.py
+→ app/workflow/pipeline.py
+```
+
+This means edits to one pipeline may not affect the actual running application.
+
+## REQUIRED ACTION
+
+Trace the exact runtime import graph.
+
+Produce a dependency/runtime map.
+
+Determine:
+
+```text
+ACTIVE
+LEGACY
+UNUSED
+DUPLICATED
+```
+
+for major modules.
+
+Create ONE canonical implementation under:
+
+```text
+src/bi_automation/
+```
+
+preferably:
+
+```text
+src/bi_automation/
+│
+├── ingestion/
+├── profiling/
+├── preprocessing/
+├── analysis/
+├── intent/
+├── semantic/
+├── dashboard/
+├── preview/
+├── powerbi/
+├── services/
+├── models/
+├── validation/
+├── web/
+└── utils/
+```
+
+However:
+
+Do NOT immediately delete legacy files.
+
+First:
+
+1. migrate,
+2. redirect imports,
+3. run regression tests,
+4. verify UI,
+5. mark legacy modules deprecated.
+
+Only remove files when references are proven absent.
+
+---
+
+# SEPARATE RESPONSIBILITIES
+
+Avoid huge classes.
+
+Create clear modules.
+
+Suggested high-level responsibilities:
+
+```text
+ExcelReader
+SchemaDetector
+DataProfiler
+DataCleaner
+FeatureRoleDetector
+AnalysisEngine
+IntentParser
+IntentValidator
+KPIPlanner
+VisualPlanner
+DashboardPlanner
+DashboardValidator
+PreviewRenderer
+DashboardModifier
+SemanticModelBuilder
+DAXMeasureBuilder
+PowerBIReportBuilder
+PBIPPackager
+PowerBIValidator
+```
+
+---
+
+# DO NOT HARDCODE DATASET-SPECIFIC LOGIC
+
+Never write:
+
+```python
+if "Sales" in columns:
+```
+
+as the primary architecture.
+
+The application must work with:
+
+```text
+sales
+finance
+HR
+inventory
+healthcare
+marketing
+education
+operations
+manufacturing
+customer support
+travel
+banking
+```
+
+Use semantic detection.
+
+Dataset-specific aliases can exist in configurable dictionaries but not inside generic pipeline logic.
+
+---
+
+# ERROR HANDLING
+
+Every stage should return structured errors.
+
+Example:
+
+```json
+{
+  "success": false,
+  "stage": "dashboard_validation",
+  "code": "INVALID_MEASURE",
+  "message": "Requested metric Revenue was not found.",
+  "details": {}
+}
+```
+
+Do NOT:
+
+- swallow exceptions,
+- use bare `except`,
+- silently replace failure with zero,
+- automatically continue after critical errors.
+
+---
+
+# LOGGING
+
+Implement structured logs for important operations.
+
+Example:
+
+```text
+[INGESTION]
+[PROFILING]
+[INTENT]
+[ANALYSIS]
+[DASHBOARD_PLAN]
+[PREVIEW]
+[POWERBI_MODEL]
+[POWERBI_REPORT]
+[VALIDATION]
+```
+
+Do not log sensitive raw data unnecessarily.
+
+---
+
+# PERFORMANCE
+
+The application should remain usable with realistically sized Excel files.
+
+Avoid:
+
+```text
+nested row loops
+repeated full dataframe scans
+repeating expensive analysis
+regenerating unchanged dashboard components
+```
+
+Cache safe deterministic intermediate results using a dataset/configuration fingerprint where useful.
+
+---
+
+# SECURITY
+
+Treat uploaded Excel content as untrusted.
+
+Validate:
+
+- file extension
+- MIME/type where possible
+- file size
+- sheet names
+- unsupported formulas/content
+- invalid path names
+
+Prevent:
+
+- path traversal
+- arbitrary file overwrite
+- command injection
+- unsafe deserialization
+- untrusted code execution
+
+Never execute Excel-provided strings as Python.
+
+---
+
+# AUTOMATED TESTING — REQUIRED
+
+Do NOT consider the project finished without tests.
+
+Create/update:
+
+```text
+tests/
+```
+
+Use `pytest` where appropriate.
+
+---
+
+# TEST 1 — SELECTED COLUMNS REMAIN SELECTED
+
+Input has:
+
+```text
+11 columns
+```
+
+User selects only:
+
+```text
+Order ID
+Order Date
+Region
+```
+
+Expected Phase 2 dataset:
+
+```text
+exactly 3 columns
+```
+
+No original unselected columns may reappear.
+
+---
+
+# TEST 2 — ANALYSIS SELECTION
+
+User selects only:
+
+```text
+Univariate
+```
+
+Expected:
+
+```text
+univariate > 0
+
+bivariate = 0
+multivariate = 0
+statistical = 0
+probability = 0
+```
+
+---
+
+# TEST 3 — NATURAL LANGUAGE INTENT
+
+Input:
+
+```text
+Show total sales, total profit, sales by region,
+monthly sales trend and top 10 products by sales.
+```
+
+Expected:
+
+```text
+2 KPIs
+3 visuals
+```
+
+with exact semantic mappings.
+
+---
+
+# TEST 4 — TOP N
+
+Requirement:
+
+```text
+Top 5 products by sales
+```
+
+Preview must contain 5 ranked products.
+
+Power BI specification must contain equivalent Top N semantics.
+
+---
+
+# TEST 5 — AGGREGATION CONSISTENCY
+
+Requirement:
+
+```text
+Average sales by channel
+```
+
+Expected:
+
+```text
+Preview = Average
+Power BI = Average
+```
+
+NOT:
+
+```text
+Preview = Average
+Power BI = Sum
+```
+
+---
+
+# TEST 6 — NO FAKE FIELDS
+
+No exported visual may reference:
+
+```text
+Count
+Frequency
+```
+
+unless such columns genuinely exist.
+
+Row count and histogram frequencies must use proper semantic calculation.
+
+---
+
+# TEST 7 — FAILURE STATE
+
+Force an ingestion failure.
+
+Expected:
+
+```text
+success = false
+```
+
+Frontend must display failure.
+
+It must NOT proceed because of `or True` logic.
+
+---
+
+# TEST 8 — MISSING VALUES
+
+Use known missing values.
+
+UI data quality results must exactly match backend result.
+
+---
+
+# TEST 9 — OUTLIERS
+
+Create a dataset with known outliers.
+
+Backend and preview must show the same count.
+
+---
+
+# TEST 10 — MULTIPLE SHEETS
+
+Test:
+
+```text
+Orders
+Customers
+Products
+```
+
+Verify relationship inference without incorrect merging.
+
+---
+
+# TEST 11 — DIFFERENT BUSINESS DOMAINS
+
+Create sample datasets for:
+
+```text
+Sales
+HR
+Finance
+Inventory
+```
+
+The application must generate context-appropriate KPIs/charts.
+
+---
+
+# TEST 12 — NONSTANDARD COLUMN NAMES
+
+Example:
+
+```text
+Net_Revenue_INR
+Txn_Date
+Cust_No
+Item_Group
+```
+
+Ensure semantic detection still works.
+
+---
+
+# TEST 13 — IDENTIFIERS
+
+Ensure transaction IDs don't become default chart dimensions.
+
+---
+
+# TEST 14 — BAD USER REQUEST
+
+Example:
+
+```text
+Show revenue by country
+```
+
+Dataset contains neither revenue nor country.
+
+Expected:
+
+structured warning.
+
+Never hallucinate fields.
+
+---
+
+# TEST 15 — PBIP VALIDATION
+
+Generated project must pass internal PBIP validation.
+
+All referenced:
+
+```text
+pages
+visuals
+tables
+columns
+measures
+relationships
+filters
+```
+
+must exist.
+
+---
+
+# TEST 16 — OPEN IN POWER BI DESKTOP
+
+Where Power BI Desktop is available on the machine:
+
+Generate a real test PBIP.
+
+Open it.
+
+Verify:
+
+```text
+project loads
+semantic model loads
+pages load
+visuals appear
+no broken field references
+no missing schema files
+```
+
+If Power BI Desktop cannot be programmatically opened in the environment, clearly report this limitation and still perform structural/schema validation.
+
+---
+
+# UPDATE OUTDATED TESTS
+
+Existing tests may call something similar to:
+
+```python
+pipeline.run()
+```
+
+while the current API uses:
+
+```python
+run_phase1()
+run_phase2()
+```
+
+Update the tests.
+
+Do NOT preserve outdated tests merely to avoid changing them.
+
+---
+
+# TEST DATASETS
+
+Create controlled synthetic test fixtures.
+
+Example Sales dataset:
+
+```text
+Order ID
+Order Date
+Region
+Product
+Category
+Channel
+Sales
+Cost
+Profit
+Quantity
+Customer ID
+```
+
+Generate known expected totals to make assertions deterministic.
+
+---
+
+# DASHBOARD QUALITY VALIDATION
+
+Build a dashboard quality checker.
+
+Check:
+
+```text
+duplicate charts
+too many visuals
+invalid dimensions
+invalid measures
+wrong aggregation
+overcrowded page
+too many pie categories
+identifier used incorrectly
+chart title mismatch
+Top N not applied
+missing user requirement
+user requirement represented twice
+```
+
+---
+
+# REQUIREMENT COVERAGE SCORE
+
+This is important.
+
+After dashboard generation, compute requirement coverage.
+
+Example:
+
+User asked:
+
+```text
+Total Sales
+Total Profit
+Sales by Region
+Monthly Trend
+Top 10 Products
+```
+
+Create:
+
+```text
+Requirement Coverage:
+
+Total Sales          ✅
+Total Profit         ✅
+Sales by Region      ✅
+Monthly Trend        ✅
+Top 10 Products      ✅
+
+Coverage = 5 / 5 = 100%
+```
+
+Do NOT finalize a dashboard if important user requirements are missing without explicitly warning.
+
+---
+
+# DATA-TO-VISUAL LINEAGE
+
+Every visual should be traceable.
+
+Example:
+
+```text
+Visual:
+Sales by Region
+
+Source table:
+Orders
+
+Dimension:
+Region
+
+Measure:
+Total Sales
+
+Aggregation:
+SUM
+
+Filters:
+None
+
+Top N:
+None
+```
+
+Maintain this in internal metadata.
+
+This is useful for debugging and validation.
+
+---
+
+# USER-FACING EXPLANATION
+
+After dashboard creation, provide a summary such as:
+
+```text
+Dashboard generated from 15,420 rows and 11 columns.
+
+Detected:
+4 measures
+3 categorical dimensions
+1 date field
+2 identifiers
+
+Created:
+4 KPIs
+6 charts
+2 slicers
+3 pages
+
+User requirement coverage:
+100%
+```
+
+Do not expose internal stack traces to ordinary users.
+
+---
+
+# IMPORTANT ENGINEERING RULE — LLM IS NOT THE SOURCE OF TRUTH
+
+Gemini/AI may help interpret user intent.
+
+But the LLM must NOT directly generate unchecked PBIR/TMDL output.
+
+Use:
+
+```text
+User request
+↓
+LLM Intent Interpretation
+↓
+Structured JSON/Pydantic model
+↓
+Deterministic Validation
+↓
+DashboardSpec
+↓
+Deterministic Renderer
+```
+
+This prevents hallucinated Power BI fields.
+
+---
+
+# ARCHITECTURE TARGET
+
+Final architecture should approximately be:
+
+```text
+                        USER
+                         │
+                         ▼
+                 Excel Upload
+                         │
+                         ▼
+                Ingestion Layer
+                         │
+                         ▼
+              Schema Detection
+                         │
+                         ▼
+                 Profiling
+                         │
+                         ▼
+               Preprocessing
+                         │
+                         ▼
+            Feature Role Detection
+                         │
+                         ▼
+               User Requirement
+                         │
+                         ▼
+             AI Intent Interpreter
+                         │
+                         ▼
+             Intent Validator
+                         │
+                         ▼
+        ┌─────────────────────────┐
+        │ Dashboard Intelligence  │
+        └─────────────────────────┘
+             │               │
+             ▼               ▼
+        KPI Planner     Visual Planner
+             │               │
+             └───────┬───────┘
+                     ▼
+               DashboardSpec
+                     │
+             Dashboard Validator
+                     │
+            ┌────────┴─────────┐
+            ▼                  ▼
+       Web Preview      Semantic Model
+                              │
+                         Power BI Report
+                              │
+                         PBIP Validator
+                              │
+                              ▼
+                     Downloadable PBIP
+```
+
+---
+
+# IMPLEMENTATION PHASES
+
+Do NOT attempt a giant uncontrolled rewrite.
+
+Perform changes in these phases.
+
+## PHASE 0 — REPOSITORY AUDIT
+
+Before changing code:
+
+1. inspect repository tree,
+2. find application entry point,
+3. trace runtime imports,
+4. identify duplicate implementations,
+5. identify current models,
+6. identify current tests,
+7. identify current frontend API contracts,
+8. identify Power BI generator.
+
+Produce a short internal migration map.
+
+Then start implementation.
+
+Do NOT stop after the audit.
+
+---
+
+# PHASE 1 — FIX CRITICAL PIPELINE DEFECTS
+
+Fix:
+
+```text
+duplicate pipeline execution
+selected-column reset
+analysis selection reset
+wrong processing order
+failure handling
+data-quality schema mismatch
+```
+
+Run tests.
+
+Do not proceed until they pass.
+
+---
+
+# PHASE 2 — INTRODUCE CANONICAL DOMAIN MODELS
+
+Implement:
+
+```text
+DatasetProfile
+FeatureProfile
+AnalysisConfig
+DashboardIntent
+KPIIntent
+VisualSpec
+PageSpec
+DashboardSpec
+DataQualitySummary
+```
+
+Use Pydantic/dataclasses.
+
+Add validation.
+
+---
+
+# PHASE 3 — REBUILD INTENT PARSING
+
+Replace fragile keyword-only interpretation with structured semantic interpretation plus deterministic validation.
+
+Test complex user requirements.
+
+---
+
+# PHASE 4 — DASHBOARD PLANNER
+
+Implement goal-aware:
+
+```text
+KPI planning
+visual planning
+page planning
+filter planning
+slicer planning
+layout planning
+```
+
+---
+
+# PHASE 5 — PREVIEW
+
+Make preview consume `DashboardSpec`.
+
+Remove duplicated visualization business logic from preview renderer.
+
+---
+
+# PHASE 6 — SEMANTIC MODEL
+
+Implement:
+
+```text
+tables
+relationships
+measures
+hierarchies
+date table
+formats
+```
+
+---
+
+# PHASE 7 — MODERN POWER BI EXPORTER
+
+Upgrade toward valid:
+
+```text
+PBIP
+PBIR
+TMDL
+```
+
+according to current Microsoft documentation/schema.
+
+---
+
+# PHASE 8 — USER DASHBOARD MODIFICATION ENGINE
+
+Implement natural-language modifications against an existing DashboardSpec.
+
+---
+
+# PHASE 9 — FULL REGRESSION TESTS
+
+Run:
+
+```text
+unit tests
+integration tests
+end-to-end tests
+PBIP structure validation
+```
+
+---
+
+# PHASE 10 — CLEANUP
+
+After everything works:
+
+1. remove dead imports,
+2. mark legacy code,
+3. remove confirmed dead code,
+4. update README,
+5. update architecture documentation.
+
+---
+
+# DO NOT CHANGE WORKING UI UNNECESSARILY
+
+The current UI is not the primary problem.
+
+Prioritize:
+
+```text
+correctness
+intent understanding
+analysis
+semantic modeling
+Power BI generation
+validation
+```
+
+Do not waste the implementation effort redesigning colors/buttons unless necessary for the workflow.
+
+---
+
+# PRESERVE EXISTING USER FLOW
+
+The user should still have a simple experience.
+
+## STEP 1
+
+Upload Excel.
+
+## STEP 2
+
+System automatically analyzes it.
+
+## STEP 3
+
+User selects/adjusts:
+
+```text
+features
+analysis types
+dashboard requirement
+```
+
+## STEP 4
+
+System generates preview.
+
+## STEP 5
+
+User can say:
+
+```text
+Looks good
+```
+
+or request modifications.
+
+## STEP 6
+
+System generates Power BI project.
+
+---
+
+# FINAL QUALITY REQUIREMENT
+
+I do NOT want a system that merely generates charts.
+
+I want a system that understands:
+
+```text
+What is this dataset?
+
+Which fields are dimensions?
+
+Which fields are measures?
+
+What does the user want to know?
+
+Which KPIs answer that question?
+
+Which visual best communicates that answer?
+
+Which aggregation is correct?
+
+Which filters are relevant?
+
+How should pages be organized?
+
+How should the semantic model be constructed?
+
+Will the resulting Power BI project actually work?
+```
+
+The application must answer these questions systematically.
+
+---
+
+# IMPORTANT: DO NOT OVER-ENGINEER
+
+Prefer:
+
+```text
+clear
+tested
+maintainable
+modular
+deterministic
+```
+
+over complicated AI agents everywhere.
+
+AI should mainly be used for:
+
+```text
+semantic understanding
+business-context inference
+user intent interpretation
+dashboard recommendation
+```
+
+Deterministic Python should handle:
+
+```text
+data processing
+statistics
+validation
+aggregation
+specification validation
+Power BI file generation
+```
+
+---
+
+# POWER BI CAPABILITY MATRIX
+
+Create documentation:
+
+`docs/POWER_BI_CAPABILITY_MATRIX.md`
+
+Use categories:
+
+```text
+Capability
+Implementation Status
+Local Preview
+PBIP Export
+Requires Power BI Service
+Notes
+```
+
+Cover at least:
+
+```text
+Excel import
+multi-sheet import
+Power Query-like transformations
+data types
+relationships
+DAX measures
+calculated measures
+date tables
+hierarchies
+cards
+bar charts
+column charts
+line charts
+area charts
+pie/donut
+treemap
+scatter
+waterfall
+funnel
+table
+matrix
+gauge
+maps
+filters
+slicers
+Top N
+sorting
+conditional formatting
+drilldown
+drillthrough
+tooltips
+bookmarks
+navigation
+multi-page reports
+themes
+mobile layout
+RLS
+refresh
+publishing
+workspaces
+subscriptions
+alerts
+gateways
+Fabric integration
+```
+
+Never mark something `Supported` unless it actually works.
+
+---
+
+# DOCUMENTATION
+
+Update README with:
+
+```text
+architecture
+installation
+Windows setup
+running application
+supported Excel formats
+workflow
+supported analyses
+Power BI capabilities
+limitations
+testing
+troubleshooting
+project structure
+```
+
+Also explain:
+
+```text
+Preview and final Power BI dashboard are generated from the same DashboardSpec.
+```
+
+---
+
+# REQUIRED OUTPUT FROM YOU AFTER IMPLEMENTATION
+
+When you complete the code changes, give me a report with these sections:
+
+## 1. Root Causes Found
+
+List every actual issue discovered.
+
+## 2. Files Modified
+
+For each file:
+
+```text
+file path
+what changed
+why
+```
+
+## 3. Architecture Changes
+
+Show before and after.
+
+## 4. Bugs Fixed
+
+Report status:
+
+```text
+FIXED
+PARTIALLY FIXED
+NOT APPLICABLE
+BLOCKED
+```
+
+## 5. New Functionalities
+
+List everything added.
+
+## 6. Power BI Capability Matrix
+
+Summarize support.
+
+## 7. Tests Executed
+
+For every test:
+
+```text
+name
+input
+expected
+actual
+pass/fail
+```
+
+## 8. Remaining Limitations
+
+Be transparent.
+
+## 9. How to Run
+
+Give Windows commands.
+
+## 10. How to Validate
+
+Give exact steps for testing:
+
+```text
+Excel upload
+requirement
+preview
+modification
+PBIP generation
+Power BI Desktop opening
+```
+
+---
+
+# ACCEPTANCE SCENARIO
+
+Use at least this scenario before considering the project complete.
+
+Input Excel columns:
+
+```text
+Order ID
+Order Date
+Region
+Product
+Category
+Channel
+Sales
+Cost
+Profit
+Quantity
+Customer ID
+```
+
+User requirement:
+
+```text
+Create an executive sales dashboard.
+
+Show Total Sales, Total Profit, Profit Margin and Order Count.
+
+Show monthly Sales and Profit trends.
+
+Compare Sales and Profit by Region.
+
+Show top 10 Products by Sales.
+
+Show Category performance.
+
+Show Channel performance.
+
+Add Region, Category and Date filters.
+
+Create a separate detailed Product Analysis page.
+
+Allow drill-down from Category to Product.
+
+Use a professional dashboard design.
+```
+
+Expected interpretation:
+
+### KPIs
+
+```text
+Total Sales
+Total Profit
+Profit Margin
+Order Count
+```
+
+### Executive Overview
+
+```text
+KPI cards
+Monthly Sales/Profit trend
+Sales/Profit by Region
+Category performance
+Region slicer
+Category slicer
+Date slicer
+```
+
+### Product Analysis
+
+```text
+Top 10 Products by Sales
+Product Profit
+Product Sales
+Category → Product drill hierarchy
+Detailed matrix/table
+```
+
+### Channel
+
+Include Channel analysis either on overview or suitable second page according to layout quality.
+
+### Validation
+
+The final Power BI report must NOT contain:
+
+```text
+fake Count columns
+fake Frequency columns
+missing fields
+wrong aggregation
+unselected columns accidentally restored
+generic charts unrelated to the requirement
+```
+
+---
+
+# DEFINITION OF DONE
+
+Do NOT say the project is complete just because:
+
+```text
+application runs
+```
+
+It is complete only when:
+
+```text
+pipeline respects user configuration
++
+intent parser correctly understands requirements
++
+dashboard specification is valid
++
+preview matches dashboard specification
++
+Power BI output matches dashboard specification
++
+no fake fields exist
++
+valid semantic model is generated
++
+user modifications work
++
+automated tests pass
++
+Power BI project structure is validated
++
+documented limitations are accurate
+```
+
+---
+
+# FINAL INSTRUCTION
+
+Start by analyzing the current repository.
+
+Do NOT rewrite everything blindly.
+
+Do NOT only provide recommendations.
+
+Implement the fixes directly.
+
+After every major phase:
+
+```text
+run tests
+inspect failures
+fix failures
+continue
+```
+
+Do not hide errors.
+
+Do not claim unsupported Power BI capabilities.
+
+Use current official Microsoft Power BI PBIP/PBIR/TMDL specifications when generating Power BI project files.
+
+The highest priorities are:
+
+```text
+1. Correct user intent
+2. Correct calculations
+3. Correct semantic model
+4. Correct visual specifications
+5. Preview = final Power BI meaning
+6. Valid Power BI project
+7. Good user experience
+8. Extensible architecture
+```
+
+Proceed with implementation now.

@@ -26,7 +26,7 @@ import pandas as pd
 from preprocessing.datatype_detector import ColumnProfile
 from dashboard.dax_generator import DAXMeasure
 from dashboard.kpi_detector import KPI
-from dashboard.chart_selector import ChartSpec
+from bi_automation.models.domain import VisualSpec
 from config import TEMP_DIR
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ class ModelBuilder:
         profiles: Dict[str, ColumnProfile],
         dax_measures: List[DAXMeasure],
         kpis: List[KPI],
-        chart_specs: List[ChartSpec],
+        chart_specs: List[VisualSpec],
         dashboard_title: str,
         table_name: str = "DataTable",
     ):
@@ -243,7 +243,7 @@ class ModelBuilder:
             "sections": sections,
         }
 
-    def _build_page_visuals(self, specs: List[ChartSpec], page: int) -> List[dict]:
+    def _build_page_visuals(self, specs: List[VisualSpec], page: int) -> List[dict]:
         visuals = []
         cols = 2
         cell_w, cell_h = 440, 260
@@ -260,20 +260,20 @@ class ModelBuilder:
                 "width": cell_w,
                 "height": cell_h,
                 "config": json.dumps({
-                    "name": spec.chart_id,
+                    "name": spec.id,
                     "layouts": [{"id": 0, "position": {"x": x, "y": y, "width": cell_w, "height": cell_h}}],
                     "singleVisual": {
                         "visualType": visual_type,
                         "projections": {
-                            "Category": [{"queryRef": spec.x_column}],
-                            "Y": [{"queryRef": spec.y_column}],
+                            "Category": [{"queryRef": spec.dimension}],
+                            "Y": [{"queryRef": spec.measure}],
                         },
                         "prototypeQuery": {
                             "Version": 2,
                             "From": [{"Name": "t", "Entity": self.table_name, "Type": 0}],
                             "Select": [
-                                {"Column": {"Expression": {"SourceRef": {"Source": "t"}}, "Property": spec.x_column}, "Name": spec.x_column},
-                                {"Aggregation": {"Expression": {"Column": {"Expression": {"SourceRef": {"Source": "t"}}, "Property": spec.y_column}}, "Function": 0}, "Name": f"Sum({spec.y_column})"},
+                                {"Column": {"Expression": {"SourceRef": {"Source": "t"}}, "Property": spec.dimension}, "Name": spec.dimension},
+                                {"Aggregation": {"Expression": {"Column": {"Expression": {"SourceRef": {"Source": "t"}}, "Property": spec.measure}}, "Function": 0}, "Name": f"Sum({spec.measure})"},
                             ],
                         },
                         "title": {"show": True, "text": spec.title},

@@ -14,8 +14,9 @@ from typing import Any, Dict, List, Optional
 
 from config import PALETTE
 from dashboard.kpi_detector import KPI
-from bi_automation.powerbi.models import ChartSpec
+from bi_automation.models.domain import VisualSpec
 from analysis.insight_engine import Insight
+from bi_automation.models.data_quality import DataQualitySummary
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +29,9 @@ class PreviewRenderer:
         self,
         title: str,
         kpis: List[KPI],
-        chart_specs: List[ChartSpec],
+        chart_specs: List[VisualSpec],
         insights: List[Insight],
-        data_quality_summary: Dict[str, Any],
+        data_quality_summary: Optional[DataQualitySummary],
         df,
     ):
         self.title                = title
@@ -46,7 +47,7 @@ class PreviewRenderer:
         for spec in self.chart_specs:
             option = self._build_echart_option(spec)
             if option:
-                chart_options[spec.chart_id] = option
+                chart_options[spec.id] = option
 
         # We will pass the chart options as a JSON string to the template
         # along with the HTML structural blocks
@@ -80,18 +81,18 @@ class PreviewRenderer:
             html += f"<div class='chart-card'>"
             html += f"<div class='chart-title'>{spec.title}</div>"
             # ECharts container
-            html += f"<div id='{spec.chart_id}' class='echart-container' style='width:100%; height:300px;'></div>"
+            html += f"<div id='{spec.id}' class='echart-container' style='width:100%; height:300px;'></div>"
             html += "</div>"
         return html
 
     # ── ECharts Option Builders ───────────────────────────────────────────────
-    def _build_echart_option(self, spec: ChartSpec) -> Optional[dict]:
+    def _build_echart_option(self, spec: VisualSpec) -> Optional[dict]:
         try:
             ctype = spec.chart_type
             data = spec.data
             
-            x_col = spec.x_column or ""
-            y_col = spec.y_column or ""
+            x_col = spec.dimension or ""
+            y_col = spec.measure or ""
             # Base option
             option = {
                 "color": CHART_COLORS,
@@ -174,9 +175,9 @@ class PreviewRenderer:
             elif ctype == "scatter":
                 # ECharts scatter requires [[x, y], [x, y]] data
                 # Extract directly from self.df!
-                if spec.x_column in self.df.columns and spec.y_column in self.df.columns:
-                    x_vals = self.df[spec.x_column].dropna()
-                    y_vals = self.df[spec.y_column].dropna()
+                if spec.dimension in self.df.columns and spec.measure in self.df.columns:
+                    x_vals = self.df[spec.dimension].dropna()
+                    y_vals = self.df[spec.measure].dropna()
                     # Align indices
                     idx = x_vals.index.intersection(y_vals.index)
                     if len(idx) > 1000:
@@ -191,7 +192,7 @@ class PreviewRenderer:
                         "itemStyle": {"opacity": 0.6}
                     }]
                 else:
-                    raise KeyError(f"Columns missing for scatter: {spec.x_column}, {spec.y_column}")
+                    raise KeyError(f"Columns missing for scatter: {spec.dimension}, {spec.measure}")
                 
             elif ctype == "stacked_bar" and data:
                 labels = list(data.keys())
@@ -218,7 +219,7 @@ class PreviewRenderer:
 
             return option
         except Exception as e:
-            logger.error("Chart render failed for %s: %s", spec.chart_id, e)
+            logger.error("Chart render failed for %s: %s", spec.id, e)
             return None
 
 
@@ -243,9 +244,11 @@ class PreviewRenderer:
         return h
 
     def _quality_html(self) -> str:
-        missing = self.data_quality_summary.get("missing_cells", 0)
-        dupes   = self.data_quality_summary.get("duplicates", 0)
-        outliers= self.data_quality_summary.get("outliers", 0)
+        if not self.data_quality_summary:
+            return ""
+        missing = self.data_quality_summary.missing_cells
+        dupes   = self.data_quality_summary.duplicate_rows
+        outliers= self.data_quality_summary.outlier_count
         
         h = "<div class='quality-banner'>"
         if missing == 0 and dupes == 0 and outliers == 0:

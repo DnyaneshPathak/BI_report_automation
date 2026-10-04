@@ -387,7 +387,7 @@ def analyze():
         result = pipeline.run_phase1()
         _sessions[sid]["result"] = result
         
-        if result.success or True: # Phase 1 always completes even with some errors
+        if result.success:
             q.put({"type": "done"})
         else:
             q.put({"type": "error", "message": result.error or "Unknown error"})
@@ -557,7 +557,7 @@ def approve():
             profiles        = result.profiles,
             dax_measures    = result.dax_measures,
             kpis            = result.kpis,
-            chart_specs     = result.chart_specs,
+            visual_specs     = result.visual_specs,
             dashboard_title = result.dashboard_title,
         )
         exporter = Exporter(
@@ -634,19 +634,19 @@ def regenerate():
 
         if feedback_text:
             # Run through the heuristic interpreter
-            interpreter = ChangeInterpreter(result.profiles, result.chart_specs)
+            interpreter = ChangeInterpreter(result.profiles, result.visual_specs)
             change = interpreter.interpret(feedback_text)
             interpreted_summary = change.summary
 
             # Apply changes to existing specs
-            new_specs = interpreter.apply(change, result.chart_specs)
+            new_specs = interpreter.apply(change, result.visual_specs)
 
             # If interpreter added force_charts that need data, try to populate them
             for spec in new_specs:
                 if not spec.data:
                     spec = _populate_spec_data(spec, result.df_clean, result.profiles,
                                                result.col_stats, result.univariate, result.bivariate)
-            result.chart_specs = new_specs
+            result.visual_specs = new_specs
         else:
             # No feedback — just reshuffle
             selector = ChartSelector(
@@ -657,12 +657,12 @@ def regenerate():
                 result.multivariate,
                 result.relevance_scores,
             )
-            result.chart_specs = selector.select()
+            result.visual_specs = selector.select()
 
         renderer = PreviewRenderer(
             title                = result.dashboard_title,
             kpis                 = result.kpis,
-            chart_specs          = result.chart_specs,
+            visual_specs          = result.visual_specs,
             insights             = result.insights,
             data_quality_summary = result.data_quality_summary,
             df                   = result.df_clean,

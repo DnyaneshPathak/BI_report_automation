@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
-from bi_automation.powerbi.models import ChartSpec
+from bi_automation.models.domain import VisualSpec
 from preprocessing.datatype_detector import ColumnProfile
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ class InterpretedChange:
     focus_columns: List[str] = field(default_factory=list)      # boost relevance for these cols
     hide_columns: Set[str] = field(default_factory=set)         # exclude these cols
     top_n: Optional[int] = None                                 # limit categories to top N
-    force_charts: List[ChartSpec] = field(default_factory=list) # fully built specs to inject
+    force_charts: List[VisualSpec] = field(default_factory=list) # fully built specs to inject
     page_remap: Dict[str, int] = field(default_factory=dict)    # move chart type to page N
 
 
@@ -62,7 +62,7 @@ class ChangeInterpreter:
     def __init__(
         self,
         profiles: Dict[str, ColumnProfile],
-        existing_specs: List[ChartSpec],
+        existing_specs: List[VisualSpec],
     ):
         self.profiles = profiles
         self.existing_specs = existing_specs
@@ -300,9 +300,9 @@ class ChangeInterpreter:
         return change
 
 
-    def apply(self, change: InterpretedChange, existing_specs: List[ChartSpec]) -> List[ChartSpec]:
+    def apply(self, change: InterpretedChange, existing_specs: List[VisualSpec]) -> List[VisualSpec]:
         """Apply interpreted changes to produce a new spec list."""
-        from bi_automation.powerbi.models import ChartSpec
+        from bi_automation.models.domain import VisualSpec
 
         result = list(existing_specs)
 
@@ -314,23 +314,23 @@ class ChangeInterpreter:
         if change.hide_columns:
             result = [
                 s for s in result
-                if s.x_column not in change.hide_columns and s.y_column not in change.hide_columns
+                if s.dimension not in change.hide_columns and s.measure not in change.hide_columns
             ]
 
         # Inject force-built specs (at page 1 front)
         for spec in change.force_charts:
-            # Avoid duplicating if same chart_id already exists
-            if not any(s.chart_id == spec.chart_id for s in result):
+            # Avoid duplicating if same id already exists
+            if not any(s.id == spec.id for s in result):
                 result.insert(0, spec)
 
         # Boost priority of focus columns
         if change.focus_columns:
             for s in result:
-                if s.x_column in change.focus_columns or s.y_column in change.focus_columns:
+                if s.dimension in change.focus_columns or s.measure in change.focus_columns:
                     s.priority = max(1, s.priority - 2)
 
         # If top_n is applied, maybe just store it on bar charts (for now just general logic)
-        # We don't have a direct field for "limit" in ChartSpec yet, but we could add it.
+        # We don't have a direct field for "limit" in VisualSpec yet, but we could add it.
         
         # Boost chart types requested
         if change.add_chart_types:
@@ -367,22 +367,22 @@ class ChangeInterpreter:
                 return v
         return None
 
-    def _build_spec(self, chart_type: str, x_col: Optional[str], y_col: Optional[str], page: int = 1) -> Optional[ChartSpec]:
-        """Build a minimal ChartSpec from column names."""
+    def _build_spec(self, chart_type: str, x_col: Optional[str], y_col: Optional[str], page: int = 1) -> Optional[VisualSpec]:
+        """Build a minimal VisualSpec from column names."""
         import uuid
-        from bi_automation.powerbi.models import ChartSpec
+        from bi_automation.models.domain import VisualSpec
         
         if not x_col:
             return None
         
         y_col_safe = y_col or ""
         
-        return ChartSpec(
-            chart_id=f"{chart_type}_{x_col}_{y_col_safe}_{str(uuid.uuid4())[:6]}",
+        return VisualSpec(
+            id=f"{chart_type}_{x_col}_{y_col_safe}_{str(uuid.uuid4())[:6]}",
             chart_type=chart_type,
             title=f"Custom {chart_type.capitalize()} for {x_col}",
-            x_column=x_col,
-            y_column=y_col_safe,
+            dimension=x_col,
+            measure=y_col_safe,
             page=page,
             priority=1,
             reason="User requested change."
