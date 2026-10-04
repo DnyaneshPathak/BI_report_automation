@@ -432,6 +432,16 @@ def start_analysis():
     selected_features = request.form.getlist("selected_features")
     analysis_types = request.form.getlist("analysis_types")
 
+    # Aggregate per-feature descriptions
+    feature_goals = []
+    for col in selected_features:
+        desc = request.form.get(f"desc_{col}")
+        if desc and desc.strip():
+            feature_goals.append(f"For {col}: {desc.strip()}")
+    
+    if feature_goals:
+        goal_description += " | " + " | ".join(feature_goals)
+
     q = queue.Queue()
     sess["queue"] = q
 

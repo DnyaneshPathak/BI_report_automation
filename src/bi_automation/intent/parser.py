@@ -83,8 +83,16 @@ class ChangeInterpreter:
         tokens = [t for t in clean_text.split() if t]
 
         i = 0
+        current_context_col = None
         while i < len(tokens):
             tok = tokens[i]
+            
+            # Try to opportunistically update context column
+            for j in range(len(tokens), i, -1):
+                col = self._resolve_column(" ".join(tokens[i:j]))
+                if col:
+                    current_context_col = col
+                    break
 
             # Remove/Hide
             if tok in ("remove", "hide", "delete", "exclude", "no"):
@@ -109,6 +117,7 @@ class ChangeInterpreter:
                         summaries.append(f"Hide column '{col}'")
                         i = j - 1
                         found = True
+                        current_context_col = col
                         break
                 if not found:
                     pass
@@ -126,27 +135,36 @@ class ChangeInterpreter:
                             change.focus_columns.append(col)
                             summaries.append(f"Focus on '{col}'")
                         i = j - 1
+                        current_context_col = col
                         break
 
             # Distribution / Histogram
             elif tok == "distribution" or tok == "histogram":
                 if tok == "distribution":
                     i += 1
-                    if i < len(tokens) and tokens[i] == "of": i += 1
+                    if i < len(tokens) and tokens[i] in ("of", "for"): i += 1
                 else:
                     i += 1
                     if i < len(tokens) and tokens[i] in ("of", "for"): i += 1
                     
+                found_col = None
                 for j in range(len(tokens), i, -1):
                     phrase = " ".join(tokens[i:j])
                     col = self._resolve_column(phrase)
                     if col:
-                        spec = self._build_spec("histogram", col, None)
-                        if spec:
-                            change.force_charts.append(spec)
-                            summaries.append(f"Distribution of '{col}'")
+                        found_col = col
                         i = j - 1
+                        current_context_col = col
                         break
+                
+                if not found_col and current_context_col:
+                    found_col = current_context_col
+                
+                if found_col:
+                    spec = self._build_spec("histogram", found_col, None)
+                    if spec:
+                        change.force_charts.append(spec)
+                        summaries.append(f"Distribution of '{found_col}'")
             
             # Correlation
             elif tok == "correlation" or tok == "relationship":
@@ -192,17 +210,25 @@ class ChangeInterpreter:
                 i += 1
                 if i < len(tokens) and tokens[i] in ("of", "for"): i += 1
                 
+                found_col = None
                 for j in range(len(tokens), i, -1):
                     phrase = " ".join(tokens[i:j])
                     col = self._resolve_column(phrase)
                     if col:
-                        date_col = next((c for c, p in self.profiles.items() if p.analytical_type == "datetime"), None)
-                        spec = self._build_spec("line", date_col or col, col if date_col else None)
-                        if spec:
-                            change.force_charts.append(spec)
-                            summaries.append(f"Trend line for '{col}'")
+                        found_col = col
                         i = j - 1
+                        current_context_col = col
                         break
+                
+                if not found_col and current_context_col:
+                    found_col = current_context_col
+                
+                if found_col:
+                    date_col = next((c for c, p in self.profiles.items() if p.analytical_type == "datetime"), None)
+                    spec = self._build_spec("line", date_col or found_col, found_col if date_col else None)
+                    if spec:
+                        change.force_charts.append(spec)
+                        summaries.append(f"Trend line for '{found_col}'")
             
             # Add / Show / Include
             elif tok in ("add", "show", "include"):
@@ -223,19 +249,27 @@ class ChangeInterpreter:
                     i = ct_end
                     if i < len(tokens) and tokens[i] in ("chart", "plot", "graph"): i += 1
                     
+                    found_col = None
                     # See if "for X" or "of X" is next
                     if i < len(tokens) and tokens[i] in ("for", "of"):
                         i += 1
                         for j in range(len(tokens), i, -1):
                             phrase = " ".join(tokens[i:j])
-                            col1 = self._resolve_column(phrase)
-                            if col1:
-                                spec = self._build_spec(ct, col1, None)
-                                if spec:
-                                    change.force_charts.append(spec)
-                                    summaries.append(f"Add {ct} chart for '{col1}'")
+                            col = self._resolve_column(phrase)
+                            if col:
+                                found_col = col
                                 i = j - 1
+                                current_context_col = col
                                 break
+                    
+                    if not found_col and current_context_col:
+                        found_col = current_context_col
+                        
+                    if found_col:
+                        spec = self._build_spec(ct, found_col, None)
+                        if spec:
+                            change.force_charts.append(spec)
+                            summaries.append(f"Add {ct} chart for '{found_col}'")
                     else:
                         if ct not in change.add_chart_types:
                             change.add_chart_types.append(ct)

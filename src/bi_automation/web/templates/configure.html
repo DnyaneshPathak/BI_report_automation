@@ -21,12 +21,15 @@
             <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Select Features to Analyze</label>
             <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Uncheck columns you want to completely ignore (like internal IDs or PII).</p>
             
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; max-height: 300px; overflow-y: auto;">
+            <div style="display: flex; flex-direction: column; gap: 15px; background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; max-height: 400px; overflow-y: auto;">
                 {% for col in columns %}
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px;">
-                    <input type="checkbox" name="selected_features" value="{{ col }}" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
-                    <span style="font-size: 0.95rem;">{{ col }}</span>
-                </label>
+                <div style="padding: 10px; border: 1px solid #f1f5f9; border-radius: 6px; background: #f8fafc;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; margin-bottom: 8px;">
+                        <input type="checkbox" name="selected_features" value="{{ col }}" checked style="width: 16px; height: 16px; accent-color: var(--primary);">
+                        <span style="font-size: 1rem;">{{ col }}</span>
+                    </label>
+                    <input type="text" name="desc_{{ col }}" placeholder="Describe specific analysis for {{ col }} (optional)..." style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 4px; font-family: inherit; font-size: 0.95rem;">
+                </div>
                 {% endfor %}
             </div>
         </div>
@@ -74,8 +77,8 @@
             </div>
         </div>
         
-        <div style="text-align: right;">
-            <button type="submit" class="btn-analyze" style="display: inline-block; padding: 1rem 2.5rem; font-size: 1.1rem;">Start Analysis →</button>
+        <div style="text-align: right; padding-bottom: 2rem;">
+            <button type="submit" style="display: inline-block; padding: 1rem 2.5rem; font-size: 1.1rem; background: linear-gradient(135deg, #2563eb, #3b82f6); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">Start Analysis →</button>
         </div>
     </form>
 </div>
