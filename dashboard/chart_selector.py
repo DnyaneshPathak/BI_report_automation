@@ -262,3 +262,35 @@ class ChartSelector:
                 result.append(spec)
                 page_counts[page] += 1
         return result
+
+def _populate_spec_data(spec, df, profiles, col_stats, univariate, bivariate):
+    """
+    Try to populate spec.data for a force-built ChartSpec that has no data yet.
+    Falls back gracefully - an empty data dict just means the chart shows as unavailable.
+    """
+    try:
+        import pandas as pd
+
+        x, y = spec.x_column, spec.y_column
+        ct   = spec.chart_type
+
+        if ct in ("bar", "donut", "treemap") and x in df.columns:
+            vc = df[x].value_counts().head(15)
+            spec.data = {"labels": list(vc.index.astype(str)), "values": list(vc.values.tolist())}
+
+        elif ct == "histogram" and x in df.columns:
+            col_data = pd.to_numeric(df[x], errors="coerce").dropna()
+            counts, edges = __import__("numpy").histogram(col_data, bins=20)
+            labels = [f"{edges[i]:.0f}-{edges[i+1]:.0f}" for i in range(len(counts))]
+            spec.data = {"labels": labels, "values": counts.tolist()}
+
+        elif ct == "scatter" and x in df.columns and y and y in df.columns:
+            spec.data = {"pearson_r": ""}
+
+        elif ct in ("line", "multi_line") and x in df.columns and y and y in df.columns:
+            ts = df.groupby(x)[y].sum().head(50)
+            spec.data = {"labels": [str(k) for k in ts.index], "values": ts.values.tolist()}
+
+    except Exception:
+        pass
+    return spec

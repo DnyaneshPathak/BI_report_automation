@@ -96,17 +96,17 @@ class PreviewRenderer:
             option = {
                 "color": CHART_COLORS,
                 "tooltip": {"trigger": "axis" if ctype in ("line", "bar", "multi_line") else "item"},
-                "grid": {"left": "3%", "right": "4%", "bottom": "15%", "containLabel": True},
+                "grid": {"left": "5%", "right": "8%", "bottom": "25%", "containLabel": True},
                 "xAxis": {
                     "name": x_col,
-                    "nameLocation": "middle",
-                    "nameGap": 35,
-                    "axisLabel": {"interval": "auto", "rotate": 30, "hideOverlap": True}
+                    "nameLocation": "center",
+                    "nameTextStyle": {"padding": [20, 0, 0, 0]},
+                    "axisLabel": {"interval": "auto", "rotate": 45, "hideOverlap": True}
                 },
                 "yAxis": {
                     "name": y_col,
-                    "nameLocation": "middle",
-                    "nameGap": 45
+                    "nameLocation": "center",
+                    "nameTextStyle": {"padding": [0, 0, 20, 0]}
                 },
                 "series": []
             }
@@ -171,21 +171,24 @@ class PreviewRenderer:
             elif ctype == "scatter":
                 # ECharts scatter requires [[x, y], [x, y]] data
                 # Extract directly from self.df!
-                x_vals = self.df[spec.x_column].dropna()
-                y_vals = self.df[spec.y_column].dropna()
-                # Align indices
-                idx = x_vals.index.intersection(y_vals.index)
-                if len(idx) > 1000:
-                    idx = idx[:1000] # Subsample for performance
-                scatter_data = [[float(x_vals[i]), float(y_vals[i])] for i in idx]
-                
-                option["xAxis"] = {"type": "value", "name": spec.x_column}
-                option["yAxis"] = {"type": "value", "name": spec.y_column}
-                option["series"] = [{
-                    "type": "scatter",
-                    "data": scatter_data,
-                    "itemStyle": {"opacity": 0.6}
-                }]
+                if spec.x_column in self.df.columns and spec.y_column in self.df.columns:
+                    x_vals = self.df[spec.x_column].dropna()
+                    y_vals = self.df[spec.y_column].dropna()
+                    # Align indices
+                    idx = x_vals.index.intersection(y_vals.index)
+                    if len(idx) > 1000:
+                        idx = idx[:1000] # Subsample for performance
+                    scatter_data = [[float(x_vals[i]), float(y_vals[i])] for i in idx]
+                    
+                    option["xAxis"].update({"type": "value"})
+                    option["yAxis"].update({"type": "value"})
+                    option["series"] = [{
+                        "type": "scatter",
+                        "data": scatter_data,
+                        "itemStyle": {"opacity": 0.6}
+                    }]
+                else:
+                    raise KeyError(f"Columns missing for scatter: {spec.x_column}, {spec.y_column}")
                 
             elif ctype == "stacked_bar" and data:
                 labels = list(data.keys())
