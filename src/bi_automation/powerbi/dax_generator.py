@@ -43,6 +43,17 @@ class DAXGenerator:
 
     def generate(self) -> List[DAXMeasure]:
         measures: List[DAXMeasure] = []
+        
+        # Include KPI measures
+        for k in self.kpis:
+            if k.dax_measure:
+                # Format: [Measure Name] = Expression
+                parts = k.dax_measure.split("=", 1)
+                if len(parts) == 2:
+                    name = parts[0].strip().strip("[]")
+                    expr = parts[1].strip()
+                    measures.append(DAXMeasure(name=name, expression=expr, table=self.table_name, category="kpi"))
+
         measures += self._aggregate_measures()
         measures += self._ratio_measures()
         measures += self._count_measures()

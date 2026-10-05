@@ -52,9 +52,11 @@ from analysis.statistical import StatisticalAnalyser, StatTestResult
 from analysis.probability import ProbabilityAnalyser, ProbabilityResult
 from analysis.insight_engine import InsightEngine, Insight, AnalyticalRelevanceScore
 from dashboard.kpi_detector import KPIDetector, KPI
-from dashboard.chart_selector import ChartSelector, ChartSpec
+from dashboard.chart_selector import ChartSelector
+from bi_automation.models.domain import VisualSpec
 from dashboard.dax_generator import DAXGenerator, DAXMeasure
 from bi_automation.web.preview_renderer import PreviewRenderer
+from bi_automation.models.data_quality import DataQualitySummary
 from config import TEMP_DIR
 
 logger = logging.getLogger(__name__)
@@ -86,14 +88,28 @@ class PipelineResult:
     insights: List[Insight] = field(default_factory=list)
     relevance_scores: List[AnalyticalRelevanceScore] = field(default_factory=list)
     kpis: List[KPI] = field(default_factory=list)
-    chart_specs: List[ChartSpec] = field(default_factory=list)
+    visual_specs: List[VisualSpec] = field(default_factory=list)
     dax_measures: List[DAXMeasure] = field(default_factory=list)
     dashboard_title: str = "Business Analytics Dashboard"
     preview_html: str = ""
-    data_quality_summary: Dict[str, Any] = field(default_factory=dict)
+    data_quality_summary: Optional['DataQualitySummary'] = None
     preprocessing_log: List[str] = field(default_factory=list)
     safe_filename: str = "dashboard"
     source_path: Optional[Path] = None
+
+    def reset_analysis_state(self):
+        """Clears all analysis results that might contain old dataset information."""
+        self.univariate.clear()
+        self.bivariate.clear()
+        self.multivariate.clear()
+        self.statistical.clear()
+        self.probability.clear()
+        self.insights.clear()
+        self.relevance_scores.clear()
+        self.kpis.clear()
+        self.visual_specs.clear()
+        self.dax_measures.clear()
+        self.preview_html = ""
 
 
 class AnalysisPipeline:
@@ -145,10 +161,11 @@ class AnalysisPipeline:
         steps = [
             ("Reading Excel",                self._step_ingest),
             ("Detecting Data Types",         self._step_detect_types),
+            ("Initial Profiling Data",       self._step_profile),
             ("Cleaning Data",                self._step_clean),
             ("Handling Missing Values",      self._step_missing),
             ("Detecting Outliers",           self._step_outliers),
-            ("Profiling Data",               self._step_profile),
+            ("Updated Profiling Data",       self._step_profile),
         ]
         self._execute_steps(steps)
         return self.result
@@ -157,7 +174,15 @@ class AnalysisPipeline:
         if self.selected_features is not None:
             valid_features = [f for f in self.selected_features if f in self.result.df_clean.columns]
             if valid_features:
-                self.result.df_clean = self.result.df_clean[valid_features]
+                self.result.df_clean = self.result.df_clean[valid_features].copy()
+                # Recreate metadata, profiles and classifications based only on the selected features
+                self._step_profile()
+                # If we have col_stats, filter them too
+                if self.result.col_stats:
+                    self.result.col_stats = {k: v for k, v in self.result.col_stats.items() if k in valid_features}
+
+        # Clear previous analyses to ensure old analysis results do not leak into new execution
+        self.result.reset_analysis_state()
 
         steps = []
         if "univariate" in self.analysis_types:
@@ -207,46 +232,6 @@ class AnalysisPipeline:
                     return
 
         self.result.safe_filename = sanitize_filename(self.file_path.stem)
-
-        steps = [
-            ("Reading Excel",                self._step_ingest),
-            ("Profiling Data",               self._step_profile),
-            ("Detecting Data Types",         self._step_detect_types),
-            ("Cleaning Data",                self._step_clean),
-            ("Handling Missing Values",      self._step_missing),
-            ("Detecting Outliers",           self._step_outliers),
-            ("Running Univariate Analysis",  self._step_univariate),
-            ("Running Bivariate Analysis",   self._step_bivariate),
-            ("Running Multivariate Analysis",self._step_multivariate),
-            ("Running Statistical Analysis", self._step_statistical),
-            ("Running Probability Analysis", self._step_probability),
-            ("Generating Insights",          self._step_insights),
-            ("Detecting KPIs",               self._step_kpis),
-            ("Selecting Charts",             self._step_charts),
-            ("Building Preview",             self._step_preview),
-        ]
-
-        for step_name, step_fn in steps:
-            step = StepStatus(name=step_name, status="running")
-            self.result.steps.append(step)
-            self.progress_callback(step_name, "running", "")
-            t0 = time.time()
-            try:
-                step_fn()
-                step.status     = "done"
-                step.duration_s = round(time.time() - t0, 2)
-                self.progress_callback(step_name, "done", f"{step.duration_s}s")
-                logger.info("[PASS] %s (%.1fs)", step_name, step.duration_s)
-            except Exception as exc:
-                step.status  = "error"
-                step.message = str(exc)
-                logger.error("✗ %s: %s", step_name, exc, exc_info=True)
-                self.progress_callback(step_name, "error", str(exc))
-                # Non-critical steps don't abort the pipeline
-                if step_name in ("Reading Excel",):
-                    self.result.error = f"Pipeline aborted: {exc}"
-                    return self.result
-
         self.result.success = True
         return self.result
 
@@ -290,25 +275,28 @@ class AnalysisPipeline:
         self.result.preprocessing_log.extend(log)
         # Build quality summary
         total = len(df_clean)
-        total_missing = df_clean.isna().sum().sum()
+        total_missing = int(df_clean.isna().sum().sum())
         profiles = self.result.profiles
-        self.result.data_quality_summary = {
-            "rows": total,
-            "columns": len(df_clean.columns),
-            "missing_pct": round(total_missing / max(total * len(df_clean.columns), 1) * 100, 2),
-            "duplicate_pct": 0.0,   # already removed
-            "numeric_count": sum(1 for p in profiles.values() if p.analytical_type in ("continuous", "discrete_numeric")),
-            "categorical_count": sum(1 for p in profiles.values() if p.analytical_type in ("categorical_nominal", "categorical_ordinal", "binary")),
-            "date_count": sum(1 for p in profiles.values() if p.analytical_type == "datetime"),
-            "identifier_count": sum(1 for p in profiles.values() if p.analytical_type == "identifier"),
-            "outlier_count": 0,   # updated after outlier step
-        }
+        self.result.data_quality_summary = DataQualitySummary(
+            total_rows=total,
+            total_columns=len(df_clean.columns),
+            missing_cells=total_missing,
+            missing_percentage=round(total_missing / max(total * len(df_clean.columns), 1) * 100, 2),
+            duplicate_rows=0,   # already removed
+            duplicate_percentage=0.0,
+            numeric_count=sum(1 for p in profiles.values() if p.analytical_type in ("continuous", "discrete_numeric")),
+            categorical_count=sum(1 for p in profiles.values() if p.analytical_type in ("categorical_nominal", "categorical_ordinal", "binary")),
+            date_count=sum(1 for p in profiles.values() if p.analytical_type == "datetime"),
+            identifier_count=sum(1 for p in profiles.values() if p.analytical_type == "identifier"),
+            outlier_count=0,   # updated after outlier step
+        )
 
     def _step_outliers(self):
         analyser = OutlierAnalyser(self.result.df_clean, self.result.profiles)
         outlier_results = analyser.analyse()
         total_outliers = sum(r.total_detected for r in outlier_results.values())
-        self.result.data_quality_summary["outlier_count"] = total_outliers
+        if self.result.data_quality_summary:
+            self.result.data_quality_summary.outlier_count = total_outliers
 
     def _step_univariate(self):
         # Build full column stats
@@ -350,12 +338,14 @@ class AnalysisPipeline:
         self.result.relevance_scores  = engine.compute_relevance_scores()
 
     def _step_kpis(self):
+        goal = getattr(self, "goal_description", "").strip()
         detector = KPIDetector(
-            self.result.df_clean, self.result.profiles, self.result.col_stats
+            self.result.df_clean, self.result.profiles, self.result.col_stats, goal_description=goal
         )
         self.result.kpis = detector.detect()
 
     def _step_charts(self):
+        # ── Stage 1: Legacy ChartSelector (covers all selected columns) ──────
         selector = ChartSelector(
             self.result.profiles,
             self.result.col_stats,
@@ -364,29 +354,55 @@ class AnalysisPipeline:
             self.result.multivariate,
             self.result.relevance_scores,
         )
-        self.result.chart_specs = selector.select()
-        
-        # Apply goal description if provided
-        if getattr(self, "goal_description", "").strip():
+        base_specs = selector.select()
+
+        goal = getattr(self, "goal_description", "").strip()
+
+        if goal:
+            # ── Stage 2: DescriptionPlanner — user intent drives chart list ──
             try:
-                from bi_automation.intent.parser import ChangeInterpreter
-                from dashboard.chart_selector import _populate_spec_data
-                
-                interpreter = ChangeInterpreter(self.result.profiles, self.result.chart_specs)
-                change = interpreter.interpret(self.goal_description)
-                new_specs = interpreter.apply(change, self.result.chart_specs)
-                
-                # Populate data for any new forced charts
-                for spec in new_specs:
-                    if not spec.data:
-                        spec = _populate_spec_data(
-                            spec, self.result.df_clean, self.result.profiles,
-                            self.result.col_stats, self.result.univariate, self.result.bivariate
-                        )
-                self.result.chart_specs = new_specs
+                from bi_automation.intent.description_planner import DescriptionPlanner
+
+                planner = DescriptionPlanner(
+                    profiles   = self.result.profiles,
+                    col_stats  = self.result.col_stats,
+                    univariate = self.result.univariate,
+                    bivariate  = self.result.bivariate,
+                    df         = self.result.df_clean,
+                )
+                intent_specs = planner.plan(goal)
+
+                if intent_specs:
+                    # Build an id-set from intent specs to avoid duplicates
+                    intent_dimensions = {s.dimension for s in intent_specs if s.dimension}
+                    intent_measures   = {s.measure   for s in intent_specs if s.measure}
+                    intent_types      = {s.chart_type for s in intent_specs}
+
+                    # From base_specs, only keep charts that reference columns/types
+                    # NOT covered by the intent specs — avoids duplicate charts
+                    supplemental = [
+                        s for s in base_specs
+                        if (s.dimension not in intent_dimensions and s.measure not in intent_measures)
+                        or s.chart_type not in intent_types
+                    ]
+                    # Merge: intent specs first (highest priority), then supplemental
+                    combined = intent_specs + supplemental
+                    # Re-number priorities
+                    for i, s in enumerate(combined):
+                        s.priority = i + 1
+                    self.result.visual_specs = combined
+                    logger.info(
+                        "Chart step: %d intent-driven + %d supplemental = %d total",
+                        len(intent_specs), len(supplemental), len(combined)
+                    )
+                    return
             except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning("Failed to apply goal description: %s", e)
+                logger.warning("DescriptionPlanner failed — falling back to ChartSelector: %s", e, exc_info=True)
+
+        # ── Fallback: use the base ChartSelector output as-is ──────────────
+        self.result.visual_specs = base_specs
+        logger.info("Chart step: %d charts from ChartSelector", len(base_specs))
+
     def _step_dax(self):
         dax_gen = DAXGenerator(
             self.result.profiles,
@@ -398,7 +414,7 @@ class AnalysisPipeline:
         renderer = PreviewRenderer(
             title                = self.result.dashboard_title,
             kpis                 = self.result.kpis,
-            chart_specs          = self.result.chart_specs,
+            visual_specs          = self.result.visual_specs,
             insights             = self.result.insights,
             data_quality_summary = self.result.data_quality_summary,
             df                   = self.result.df_clean,

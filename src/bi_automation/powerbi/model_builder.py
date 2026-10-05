@@ -26,7 +26,7 @@ import pandas as pd
 from preprocessing.datatype_detector import ColumnProfile
 from dashboard.dax_generator import DAXMeasure
 from dashboard.kpi_detector import KPI
-from dashboard.chart_selector import ChartSpec
+from bi_automation.models.domain import VisualSpec
 from config import TEMP_DIR
 
 logger = logging.getLogger(__name__)
@@ -40,15 +40,17 @@ class ModelBuilder:
         profiles: Dict[str, ColumnProfile],
         dax_measures: List[DAXMeasure],
         kpis: List[KPI],
-        chart_specs: List[ChartSpec],
-        dashboard_title: str,
+        chart_specs: Optional[List[VisualSpec]] = None,
+        visual_specs: Optional[List[VisualSpec]] = None,
+        dashboard_title: str = "Dashboard",
         table_name: str = "DataTable",
     ):
         self.df              = df
         self.profiles        = profiles
         self.dax_measures    = dax_measures
         self.kpis            = kpis
-        self.chart_specs     = chart_specs
+        # Accept either kwarg name; visual_specs takes precedence
+        self.visual_specs    = visual_specs if visual_specs is not None else (chart_specs or [])
         self.dashboard_title = dashboard_title
         self.table_name      = table_name
 
@@ -76,12 +78,48 @@ class ModelBuilder:
         with open(report_dir / "report.json", "w", encoding="utf-8") as f:
             json.dump(layout, f, indent=2)
 
+        # Write report definition PBIR
+        pbir = {
+            "version": "4.0",
+            "datasetReference": {
+                "byPath": {
+                    "path": "../DataSet"
+                },
+                "byConnection": None
+            }
+        }
+        with open(report_dir / "definition.pbir", "w", encoding="utf-8") as f:
+            json.dump(pbir, f, indent=2)
+
+        # Write report item metadata
+        report_marker = {
+            "type": "Report",
+            "displayName": "Report"
+        }
+        with open(report_dir / "item.metadata.json", "w", encoding="utf-8") as f:
+            json.dump(report_marker, f, indent=2)
+
+        # Write dataset item metadata
+        dataset_marker = {
+            "type": "SemanticModel",
+            "displayName": "DataSet"
+        }
+        with open(dataset_dir / "item.metadata.json", "w", encoding="utf-8") as f:
+            json.dump(dataset_marker, f, indent=2)
+
+        # Write dataset definition (pbism) required for SemanticModel
+        pbism = {
+            "version": "1.0",
+            "settings": {}
+        }
+        with open(dataset_dir / "definition.pbism", "w", encoding="utf-8") as f:
+            json.dump(pbism, f, indent=2)
+
         # Write .pbip project file
         pbip = {
             "version": "1.0",
             "artifacts": [
                 {"report": {"path": "Report"}},
-                {"dataset": {"path": "DataSet"}},
             ],
             "settings": {"enableAutoRecovery": True},
         }
@@ -218,7 +256,7 @@ class ModelBuilder:
         sections = []
         pages = {1: "Executive Overview", 2: "Detailed Analysis", 3: "Trend Analysis", 4: "Statistical Insights"}
         for page_num, page_name in pages.items():
-            page_specs = [s for s in self.chart_specs if s.page == page_num]
+            page_specs = [s for s in self.visual_specs if (s.page or 1) == page_num]
             if not page_specs and page_num > 1:
                 continue
             visuals = self._build_page_visuals(page_specs, page_num)
@@ -243,37 +281,91 @@ class ModelBuilder:
             "sections": sections,
         }
 
-    def _build_page_visuals(self, specs: List[ChartSpec], page: int) -> List[dict]:
+    def _build_page_visuals(self, specs: List[VisualSpec], page: int) -> List[dict]:
         visuals = []
+        pad = 16
+        y_offset = 10
+        
+        # Add KPI cards
+        if self.kpis:
+            kpi_w = 220
+            kpi_h = 80
+            for i, kpi in enumerate(self.kpis[:4]):
+                x = pad + i * (kpi_w + pad)
+                y = y_offset
+                visual_name = uuid.uuid4().hex
+                measure_name = kpi.dax_measure.split("=")[0].strip().strip("[]")
+                
+                visuals.append({
+                    "x": x, "y": y,
+                    "z": 100 + i,
+                    "width": kpi_w,
+                    "height": kpi_h,
+                    "config": json.dumps({
+                        "name": visual_name,
+                        "layouts": [{"id": 0, "position": {"x": x, "y": y, "width": kpi_w, "height": kpi_h}}],
+                        "singleVisual": {
+                            "visualType": "card",
+                            "projections": {
+                                "Values": [{"queryRef": measure_name}],
+                            },
+                            "prototypeQuery": {
+                                "Version": 2,
+                                "From": [{"Name": "t", "Entity": self.table_name, "Type": 0}],
+                                "Select": [
+                                    {"Measure": {"Expression": {"SourceRef": {"Source": "t"}}, "Property": measure_name}, "Name": measure_name}
+                                ],
+                            },
+                            "title": {"show": False},
+                        },
+                    }),
+                })
+            y_offset += kpi_h + pad
+
         cols = 2
         cell_w, cell_h = 440, 260
-        pad = 16
         for i, spec in enumerate(specs[:6]):
             row = i // cols
             col = i % cols
             x = pad + col * (cell_w + pad)
-            y = 80 + row * (cell_h + pad)
+            y = y_offset + row * (cell_h + pad)
             visual_type = self._pbi_visual_type(spec.chart_type)
+            visual_name = uuid.uuid4().hex
+            
+            # Use appropriate projections based on visual type
+            projections = {
+                "Category": [{"queryRef": spec.dimension}],
+                "Y": [{"queryRef": spec.measure}],
+            }
+            if visual_type in ("donutChart", "pieChart", "treemap"):
+                projections = {
+                    "Category": [{"queryRef": spec.dimension}],
+                    "Y": [{"queryRef": spec.measure}],
+                }
+            elif visual_type == "scatterChart":
+                projections = {
+                    "Category": [{"queryRef": spec.dimension}],
+                    "X": [{"queryRef": spec.dimension}],
+                    "Y": [{"queryRef": spec.measure}],
+                }
+                
             visuals.append({
                 "x": x, "y": y,
                 "z": 1000 + i,
                 "width": cell_w,
                 "height": cell_h,
                 "config": json.dumps({
-                    "name": spec.chart_id,
+                    "name": visual_name,
                     "layouts": [{"id": 0, "position": {"x": x, "y": y, "width": cell_w, "height": cell_h}}],
                     "singleVisual": {
                         "visualType": visual_type,
-                        "projections": {
-                            "Category": [{"queryRef": spec.x_column}],
-                            "Y": [{"queryRef": spec.y_column}],
-                        },
+                        "projections": projections,
                         "prototypeQuery": {
                             "Version": 2,
                             "From": [{"Name": "t", "Entity": self.table_name, "Type": 0}],
                             "Select": [
-                                {"Column": {"Expression": {"SourceRef": {"Source": "t"}}, "Property": spec.x_column}, "Name": spec.x_column},
-                                {"Aggregation": {"Expression": {"Column": {"Expression": {"SourceRef": {"Source": "t"}}, "Property": spec.y_column}}, "Function": 0}, "Name": f"Sum({spec.y_column})"},
+                                {"Column": {"Expression": {"SourceRef": {"Source": "t"}}, "Property": spec.dimension}, "Name": spec.dimension},
+                                {"Aggregation": {"Expression": {"Column": {"Expression": {"SourceRef": {"Source": "t"}}, "Property": spec.measure}}, "Function": 0}, "Name": f"Sum({spec.measure})"},
                             ],
                         },
                         "title": {"show": True, "text": spec.title},
@@ -309,12 +401,18 @@ class ModelBuilder:
     def _pbi_visual_type(chart_type: str) -> str:
         mapping = {
             "line": "lineChart",
+            "area": "areaChart",
             "multi_line": "lineChart",
             "bar": "barChart",
             "histogram": "columnChart",
             "donut": "donutChart",
+            "pie": "pieChart",
             "treemap": "treemap",
             "scatter": "scatterChart",
-            "stacked_bar": "barChart",
+            "stacked_bar": "stackedBarChart",
+            "heatmap": "tableEx",
+            "waterfall": "waterfallChart",
+            "funnel": "funnel",
+            "gauge": "gauge",
         }
         return mapping.get(chart_type, "columnChart")

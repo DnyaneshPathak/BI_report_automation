@@ -37,15 +37,15 @@ class KPI:
 
 
 _FINANCIAL_PATTERNS = re.compile(
-    r"\b(revenue|sales|profit|income|amount|value|cost|price|fee|spend|budget|earning)\b", re.I
+    r"\b(revenue|sales|profit|income|amount|value|cost|price|fee|spend|spending|budget|earning|charge|charges|balance|salary)\b", re.I
 )
 _QUANTITY_PATTERNS = re.compile(
-    r"\b(quantity|qty|units?|volume|count|orders?|bookings?|tickets?|transactions?)\b", re.I
+    r"\b(quantity|qty|units?|volume|count|orders?|bookings?|tickets?|transactions?|visits?|views?|clicks?|impressions?)\b", re.I
 )
 _RATE_PATTERNS = re.compile(
-    r"\b(rate|ratio|pct|percent|cancell|churn|conversion|margin)\b", re.I
+    r"\b(rate|ratio|pct|percent|percentage|cancell|churn|conversion|margin|score)\b", re.I
 )
-_CUSTOMER_PATTERNS = re.compile(r"\b(customer|client|user|member|passenger|guest)\b", re.I)
+_CUSTOMER_PATTERNS = re.compile(r"\b(customer|client|user|member|passenger|guest|patient|employee)\b", re.I)
 
 
 class KPIDetector:
@@ -55,13 +55,18 @@ class KPIDetector:
         df: pd.DataFrame,
         profiles: Dict[str, ColumnProfile],
         col_stats: Dict[str, ColumnStats],
+        goal_description: str = "",
     ):
         self.df        = df
         self.profiles  = profiles
         self.col_stats = col_stats
+        self.goal_description = goal_description
 
     def detect(self) -> List[KPI]:
         kpis: List[KPI] = []
+
+        if self.goal_description:
+            kpis += self._extract_nlp_kpis()
 
         kpis += self._detect_totals()
         kpis += self._detect_averages()
@@ -76,6 +81,37 @@ class KPIDetector:
                 seen.add(k.title)
                 unique.append(k)
         return unique[:6]
+
+    def _extract_nlp_kpis(self) -> List[KPI]:
+        results = []
+        text = self.goal_description.lower()
+        if "kpi" not in text and "total" not in text and "average" not in text:
+            return results
+        
+        # Look for column names in the text
+        matched_any = False
+        for col, profile in self.profiles.items():
+            if col.lower() in text and col in self.df.columns:
+                series = pd.to_numeric(self.df[col], errors="coerce").dropna()
+                if len(series) > 0:
+                    matched_any = True
+                    if "average" in text or "avg" in text:
+                        val = float(series.mean())
+                        results.append(KPI(title=f"Avg {col}", value=val, formatted_value=self._format_number(val), dax_measure=f"[Avg {col}] = AVERAGE('{col}')", icon="🎯", description=f"Requested KPI"))
+                    else:
+                        val = float(series.sum())
+                        results.append(KPI(title=f"Total {col}", value=val, formatted_value=self._format_number(val), dax_measure=f"[Total {col}] = SUM('{col}')", icon="🎯", description=f"Requested KPI"))
+                        
+        if not matched_any and "kpi" in text:
+            # If user just said 'generate kpis' without specifying columns, pick top numeric columns
+            numeric_cols = [c for c, p in self.profiles.items() if p.analytical_type in ("continuous", "discrete_numeric") and c in self.df.columns]
+            for col in numeric_cols[:4]:
+                series = pd.to_numeric(self.df[col], errors="coerce").dropna()
+                if len(series) > 0:
+                    val = float(series.sum())
+                    results.append(KPI(title=f"Total {col}", value=val, formatted_value=self._format_number(val), dax_measure=f"[Total {col}] = SUM('{col}')", icon="🎯", description=f"Auto-generated KPI"))
+        
+        return results
 
     # ── Totals ────────────────────────────────────────────────────────────────
     def _detect_totals(self) -> List[KPI]:

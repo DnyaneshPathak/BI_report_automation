@@ -32,20 +32,7 @@ logger = logging.getLogger(__name__)
 MAX_DONUT_CATEGORIES = 6
 
 
-@dataclass
-class ChartSpec:
-    chart_id: str
-    chart_type: str
-    title: str
-    x_column: str
-    y_column: str
-    group_column: Optional[str] = None
-    data: Dict[str, Any] = field(default_factory=dict)
-    page: int = 1         # 1=Overview, 2=Detail, 3=Trend, 4=Statistical
-    priority: int = 5
-    reason: str = ""
-
-
+from bi_automation.models.domain import VisualSpec
 class ChartSelector:
 
     def __init__(
@@ -65,8 +52,8 @@ class ChartSelector:
         # Build relevance lookup
         self.relevance = {s.column: s.score for s in relevance_scores}
 
-    def select(self) -> List[ChartSpec]:
-        specs: List[ChartSpec] = []
+    def select(self) -> List[VisualSpec]:
+        specs: List[VisualSpec] = []
 
         specs += self._trend_charts()
         specs += self._category_charts()
@@ -81,19 +68,19 @@ class ChartSelector:
         return self._apply_page_limits(specs)
 
     # ── Trend charts ──────────────────────────────────────────────────────────
-    def _trend_charts(self) -> List[ChartSpec]:
+    def _trend_charts(self) -> List[VisualSpec]:
         specs = []
         for col, res in self.univariate_results.items():
             if res.analytical_type != "datetime" or not res.trend_by_month:
                 continue
             labels = list(res.trend_by_month.keys())[-24:]
             values = [res.trend_by_month[k] for k in labels]
-            specs.append(ChartSpec(
-                chart_id  = f"trend_month_{col}",
+            specs.append(VisualSpec(
+                id  = f"trend_month_{col}",
                 chart_type= "line",
                 title     = f"Monthly Trend — {col}",
-                x_column  = col,
-                y_column  = "Count",
+                dimension  = col,
+                measure  = "Count",
                 data      = {"labels": labels, "values": values},
                 page      = 3,
                 priority  = 2,
@@ -103,7 +90,7 @@ class ChartSelector:
         return specs
 
     # ── Category charts ───────────────────────────────────────────────────────
-    def _category_charts(self) -> List[ChartSpec]:
+    def _category_charts(self) -> List[VisualSpec]:
         specs = []
         rel_sorted = sorted(
             [(c, s) for c, s in self.relevance.items()
@@ -118,7 +105,9 @@ class ChartSelector:
             if n_cats == 0:
                 continue
 
-            if n_cats <= MAX_DONUT_CATEGORIES:
+            if n_cats <= 4:
+                ctype = "pie"
+            elif n_cats <= MAX_DONUT_CATEGORIES:
                 ctype = "donut"
             elif n_cats <= 15:
                 ctype = "bar"
@@ -126,12 +115,12 @@ class ChartSelector:
                 ctype = "treemap"
 
             page = 1 if score > 30 else 2
-            specs.append(ChartSpec(
-                chart_id  = f"cat_{col}",
+            specs.append(VisualSpec(
+                id  = f"cat_{col}",
                 chart_type= ctype,
                 title     = f"{col.replace('_',' ').title()} Distribution",
-                x_column  = col,
-                y_column  = "Count",
+                dimension  = col,
+                measure  = "Count",
                 data      = {
                     "labels": res.category_labels[:15],
                     "values": res.category_counts[:15],
@@ -143,7 +132,7 @@ class ChartSelector:
         return specs
 
     # ── Numeric distribution ──────────────────────────────────────────────────
-    def _numeric_distribution_charts(self) -> List[ChartSpec]:
+    def _numeric_distribution_charts(self) -> List[VisualSpec]:
         specs = []
         rel_sorted = sorted(
             [(c, s) for c, s in self.relevance.items()
@@ -161,12 +150,12 @@ class ChartSelector:
                 f"{res.histogram_bins[i]:.1f}–{res.histogram_bins[i+1]:.1f}"
                 for i in range(len(res.histogram_counts))
             ]
-            specs.append(ChartSpec(
-                chart_id  = f"hist_{col}",
+            specs.append(VisualSpec(
+                id  = f"hist_{col}",
                 chart_type= "histogram",
                 title     = f"{col.replace('_',' ').title()} Distribution",
-                x_column  = col,
-                y_column  = "Frequency",
+                dimension  = col,
+                measure  = "Frequency",
                 data      = {"labels": bin_labels, "values": res.histogram_counts},
                 page      = 4,
                 priority  = 6,
@@ -175,19 +164,19 @@ class ChartSelector:
         return specs
 
     # ── Correlation charts ────────────────────────────────────────────────────
-    def _correlation_charts(self) -> List[ChartSpec]:
+    def _correlation_charts(self) -> List[VisualSpec]:
         specs = []
         strong_pairs = [
             p for p in self.bivariate_pairs
             if p.pair_type == "num_num" and p.correlation_strength == "strong"
         ]
         for pair in strong_pairs[:2]:
-            specs.append(ChartSpec(
-                chart_id  = f"scatter_{pair.col_a}_{pair.col_b}",
+            specs.append(VisualSpec(
+                id  = f"scatter_{pair.col_a}_{pair.col_b}",
                 chart_type= "scatter",
                 title     = f"{pair.col_a} vs {pair.col_b}",
-                x_column  = pair.col_a,
-                y_column  = pair.col_b,
+                dimension  = pair.col_a,
+                measure  = pair.col_b,
                 data      = {"pearson_r": pair.pearson_r},
                 page      = 4,
                 priority  = 5,
@@ -196,7 +185,7 @@ class ChartSelector:
         return specs
 
     # ── Grouped bar charts (numeric by category) ──────────────────────────────
-    def _grouped_charts(self) -> List[ChartSpec]:
+    def _grouped_charts(self) -> List[VisualSpec]:
         specs = []
         sig_pairs = [
             p for p in self.bivariate_pairs
@@ -206,12 +195,12 @@ class ChartSelector:
             cats   = list(pair.group_means.keys())[:15]
             values = [pair.group_means[c] for c in cats]
             page   = 1 if len(specs) == 0 else 2
-            specs.append(ChartSpec(
-                chart_id  = f"grouped_{pair.col_a}_{pair.col_b}",
+            specs.append(VisualSpec(
+                id  = f"grouped_{pair.col_a}_{pair.col_b}",
                 chart_type= "bar",
                 title     = f"Avg {pair.col_a} by {pair.col_b}",
-                x_column  = pair.col_b,
-                y_column  = pair.col_a,
+                dimension  = pair.col_b,
+                measure  = pair.col_a,
                 data      = {"labels": cats, "values": values},
                 page      = page,
                 priority  = 2,
@@ -220,17 +209,17 @@ class ChartSelector:
         return specs
 
     # ── Multivariate ──────────────────────────────────────────────────────────
-    def _multivariate_charts(self) -> List[ChartSpec]:
+    def _multivariate_charts(self) -> List[VisualSpec]:
         specs = []
         for mv in self.multivariate_results[:2]:
             if mv.time_col:
                 # Stacked line per category
-                specs.append(ChartSpec(
-                    chart_id  = f"mv_{mv.num_col}_{mv.cat_col}_time",
+                specs.append(VisualSpec(
+                    id  = f"mv_{mv.num_col}_{mv.cat_col}_time",
                     chart_type= "multi_line",
                     title     = f"{mv.num_col} by {mv.cat_col} Over Time",
-                    x_column  = mv.time_col,
-                    y_column  = mv.num_col,
+                    dimension  = mv.time_col,
+                    measure  = mv.num_col,
                     group_column = mv.cat_col,
                     data      = mv.pivot,
                     page      = 3,
@@ -238,12 +227,12 @@ class ChartSelector:
                     reason    = "Numeric × Category × Time trend.",
                 ))
             else:
-                specs.append(ChartSpec(
-                    chart_id  = f"mv_{mv.num_col}_{mv.cat_col}",
+                specs.append(VisualSpec(
+                    id  = f"mv_{mv.num_col}_{mv.cat_col}",
                     chart_type= "stacked_bar",
                     title     = f"{mv.num_col} by {mv.cat_col} and {mv.cat2_col}",
-                    x_column  = mv.cat_col,
-                    y_column  = mv.num_col,
+                    dimension  = mv.cat_col,
+                    measure  = mv.num_col,
                     group_column = mv.cat2_col,
                     data      = mv.pivot,
                     page      = 2,
@@ -253,7 +242,7 @@ class ChartSelector:
         return specs
 
     # ── Limit per page ────────────────────────────────────────────────────────
-    def _apply_page_limits(self, specs: List[ChartSpec]) -> List[ChartSpec]:
+    def _apply_page_limits(self, specs: List[VisualSpec]) -> List[VisualSpec]:
         page_counts = {1: 0, 2: 0, 3: 0, 4: 0}
         result = []
         for spec in specs:
@@ -265,13 +254,13 @@ class ChartSelector:
 
 def _populate_spec_data(spec, df, profiles, col_stats, univariate, bivariate):
     """
-    Try to populate spec.data for a force-built ChartSpec that has no data yet.
+    Try to populate spec.data for a force-built VisualSpec that has no data yet.
     Falls back gracefully - an empty data dict just means the chart shows as unavailable.
     """
     try:
         import pandas as pd
 
-        x, y = spec.x_column, spec.y_column
+        x, y = spec.dimension, spec.measure
         ct   = spec.chart_type
 
         if ct in ("bar", "donut", "treemap") and x in df.columns:

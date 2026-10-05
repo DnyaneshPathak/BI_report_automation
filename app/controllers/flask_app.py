@@ -387,7 +387,7 @@ def analyze():
         result = pipeline.run_phase1()
         _sessions[sid]["result"] = result
         
-        if result.success or True: # Phase 1 always completes even with some errors
+        if result.success:
             q.put({"type": "done"})
         else:
             q.put({"type": "error", "message": result.error or "Unknown error"})
@@ -534,11 +534,49 @@ def preview():
     if not result or not result.success:
         err = result.error if result else "Processing failed"
         return f"<h2 style='font-family:Inter,sans-serif;padding:60px;color:#dc2626'>Error: {err}</h2><a href='/'>Try Again</a>"
-    
+
+    preview = result.preview_html
+    csrf_token = get_token()
+
+    # If it's a full HTML string (new path), serve it directly inside a wrapper
+    if isinstance(preview, str) and preview.strip().startswith("<!DOCTYPE"):
+        # Inject CSRF token and approve/regenerate controls before </body>
+        approve_ui = f"""
+<div style="position:fixed;bottom:20px;right:20px;display:flex;gap:10px;z-index:9999;">
+  <button onclick="doApprove()" style="background:#6ee7b7;color:#0f1117;border:none;border-radius:8px;padding:10px 20px;font-weight:700;cursor:pointer;">
+    ✅ Export to Power BI
+  </button>
+  <button onclick="showRegen()" style="background:#818cf8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-weight:700;cursor:pointer;">
+    🔄 Regenerate
+  </button>
+</div>
+<div id="regen-panel" style="display:none;position:fixed;bottom:80px;right:20px;background:#1a1d2e;padding:16px;border-radius:10px;width:320px;z-index:9999;">
+  <textarea id="regen-text" placeholder="Describe changes (e.g. 'show trend for Sales, remove pie charts')" style="width:100%;height:80px;background:#0f1117;color:#e0e0e0;border:1px solid #333;border-radius:6px;padding:8px;font-size:12px;"></textarea>
+  <button onclick="submitRegen()" style="margin-top:8px;background:#818cf8;color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;width:100%;">Apply Changes</button>
+</div>
+<script>
+var _csrf = "{csrf_token}";
+function doApprove() {{
+  fetch('/approve', {{method:'POST', headers:{{'X-CSRF-Token':_csrf, 'Content-Type':'application/json'}}}})
+    .then(r=>r.json()).then(d=>{{ if(d.success) window.location='/complete'; else alert('Export failed: ' + d.error); }});
+}}
+function showRegen() {{ document.getElementById('regen-panel').style.display='block'; }}
+function submitRegen() {{
+  var txt = document.getElementById('regen-text').value;
+  if(!txt.trim()) return;
+  fetch('/regenerate', {{method:'POST', headers:{{'X-CSRF-Token':_csrf, 'Content-Type':'application/json'}}, body: JSON.stringify({{feedback: txt}}) }})
+    .then(r=>r.json()).then(d=>{{ if(d.success) window.location.reload(); else alert('Failed: ' + d.error); }});
+}}
+</script>"""
+        html = preview.replace("</body>", approve_ui + "</body>")
+        return html
+
+    # Fallback: render_template with dict context (legacy)
     from flask import render_template
-    
-    context = result.preview_html  # this is now a dict
-    return render_template("preview.html", **context)
+    if isinstance(preview, dict):
+        return render_template("preview.html", **preview, csrf_token=csrf_token)
+
+    return redirect(url_for("index"))
 
 
 @app.route("/approve", methods=["POST"])
@@ -557,7 +595,7 @@ def approve():
             profiles        = result.profiles,
             dax_measures    = result.dax_measures,
             kpis            = result.kpis,
-            chart_specs     = result.chart_specs,
+            visual_specs     = result.visual_specs,
             dashboard_title = result.dashboard_title,
         )
         exporter = Exporter(
@@ -634,19 +672,19 @@ def regenerate():
 
         if feedback_text:
             # Run through the heuristic interpreter
-            interpreter = ChangeInterpreter(result.profiles, result.chart_specs)
+            interpreter = ChangeInterpreter(result.profiles, result.visual_specs)
             change = interpreter.interpret(feedback_text)
             interpreted_summary = change.summary
 
             # Apply changes to existing specs
-            new_specs = interpreter.apply(change, result.chart_specs)
+            new_specs = interpreter.apply(change, result.visual_specs)
 
             # If interpreter added force_charts that need data, try to populate them
             for spec in new_specs:
                 if not spec.data:
                     spec = _populate_spec_data(spec, result.df_clean, result.profiles,
                                                result.col_stats, result.univariate, result.bivariate)
-            result.chart_specs = new_specs
+            result.visual_specs = new_specs
         else:
             # No feedback — just reshuffle
             selector = ChartSelector(
@@ -657,12 +695,12 @@ def regenerate():
                 result.multivariate,
                 result.relevance_scores,
             )
-            result.chart_specs = selector.select()
+            result.visual_specs = selector.select()
 
         renderer = PreviewRenderer(
             title                = result.dashboard_title,
             kpis                 = result.kpis,
-            chart_specs          = result.chart_specs,
+            visual_specs          = result.visual_specs,
             insights             = result.insights,
             data_quality_summary = result.data_quality_summary,
             df                   = result.df_clean,
