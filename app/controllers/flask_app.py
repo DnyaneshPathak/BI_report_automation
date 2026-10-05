@@ -534,14 +534,6 @@ def preview():
     if not result or not result.success:
         err = result.error if result else "Processing failed"
         return f"<h2 style='font-family:Inter,sans-serif;padding:60px;color:#dc2626'>Error: {err}</h2><a href='/'>Try Again</a>"
-<<<<<<< HEAD
-    
-    from flask import render_template
-    
-    context = result.preview_html  # this is now a dict
-    return render_template("preview.html", **context)
-=======
-
     preview = result.preview_html
     csrf_token = get_token()
 
@@ -584,7 +576,6 @@ function submitRegen() {{
         return render_template("preview.html", **preview, csrf_token=csrf_token)
 
     return redirect(url_for("index"))
->>>>>>> master
 
 
 @app.route("/approve", methods=["POST"])
@@ -672,7 +663,7 @@ def regenerate():
         pass
 
     try:
-        from dashboard.chart_selector import ChartSelector
+        from dashboard.chart_selector import ChartSelector, _populate_spec_data
         from bi_automation.web.preview_renderer import PreviewRenderer
         from bi_automation.intent.parser import ChangeInterpreter
 

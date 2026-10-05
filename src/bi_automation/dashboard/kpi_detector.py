@@ -37,17 +37,6 @@ class KPI:
 
 
 _FINANCIAL_PATTERNS = re.compile(
-<<<<<<< HEAD
-    r"\b(revenue|sales|profit|income|amount|value|cost|price|fee|spend|budget|earning)\b", re.I
-)
-_QUANTITY_PATTERNS = re.compile(
-    r"\b(quantity|qty|units?|volume|count|orders?|bookings?|tickets?|transactions?)\b", re.I
-)
-_RATE_PATTERNS = re.compile(
-    r"\b(rate|ratio|pct|percent|cancell|churn|conversion|margin)\b", re.I
-)
-_CUSTOMER_PATTERNS = re.compile(r"\b(customer|client|user|member|passenger|guest)\b", re.I)
-=======
     r"\b(revenue|sales|profit|income|amount|value|cost|price|fee|spend|spending|budget|earning|charge|charges|balance|salary)\b", re.I
 )
 _QUANTITY_PATTERNS = re.compile(
@@ -57,7 +46,6 @@ _RATE_PATTERNS = re.compile(
     r"\b(rate|ratio|pct|percent|percentage|cancell|churn|conversion|margin|score)\b", re.I
 )
 _CUSTOMER_PATTERNS = re.compile(r"\b(customer|client|user|member|passenger|guest|patient|employee)\b", re.I)
->>>>>>> master
 
 
 class KPIDetector:
@@ -67,28 +55,19 @@ class KPIDetector:
         df: pd.DataFrame,
         profiles: Dict[str, ColumnProfile],
         col_stats: Dict[str, ColumnStats],
-<<<<<<< HEAD
-=======
         goal_description: str = "",
->>>>>>> master
     ):
         self.df        = df
         self.profiles  = profiles
         self.col_stats = col_stats
-<<<<<<< HEAD
-=======
         self.goal_description = goal_description
->>>>>>> master
 
     def detect(self) -> List[KPI]:
         kpis: List[KPI] = []
 
-<<<<<<< HEAD
-=======
         if self.goal_description:
             kpis += self._extract_nlp_kpis()
 
->>>>>>> master
         kpis += self._detect_totals()
         kpis += self._detect_averages()
         kpis += self._detect_counts()
@@ -103,8 +82,6 @@ class KPIDetector:
                 unique.append(k)
         return unique[:6]
 
-<<<<<<< HEAD
-=======
     def _extract_nlp_kpis(self) -> List[KPI]:
         results = []
         text = self.goal_description.lower()
@@ -136,7 +113,6 @@ class KPIDetector:
         
         return results
 
->>>>>>> master
     # ── Totals ────────────────────────────────────────────────────────────────
     def _detect_totals(self) -> List[KPI]:
         results = []

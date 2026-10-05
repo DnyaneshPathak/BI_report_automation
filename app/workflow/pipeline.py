@@ -338,22 +338,14 @@ class AnalysisPipeline:
         self.result.relevance_scores  = engine.compute_relevance_scores()
 
     def _step_kpis(self):
-<<<<<<< HEAD
-        detector = KPIDetector(
-            self.result.df_clean, self.result.profiles, self.result.col_stats
-=======
         goal = getattr(self, "goal_description", "").strip()
         detector = KPIDetector(
             self.result.df_clean, self.result.profiles, self.result.col_stats, goal_description=goal
->>>>>>> master
         )
         self.result.kpis = detector.detect()
 
     def _step_charts(self):
-<<<<<<< HEAD
-=======
         # ── Stage 1: Legacy ChartSelector (covers all selected columns) ──────
->>>>>>> master
         selector = ChartSelector(
             self.result.profiles,
             self.result.col_stats,
@@ -362,31 +354,6 @@ class AnalysisPipeline:
             self.result.multivariate,
             self.result.relevance_scores,
         )
-<<<<<<< HEAD
-        self.result.visual_specs = selector.select()
-        
-        # Apply goal description if provided
-        if getattr(self, "goal_description", "").strip():
-            try:
-                from bi_automation.intent.parser import ChangeInterpreter
-                from dashboard.chart_selector import _populate_spec_data
-                
-                interpreter = ChangeInterpreter(self.result.profiles, self.result.visual_specs)
-                change = interpreter.interpret(self.goal_description)
-                new_specs = interpreter.apply(change, self.result.visual_specs)
-                
-                # Populate data for any new forced charts
-                for spec in new_specs:
-                    if not spec.data:
-                        spec = _populate_spec_data(
-                            spec, self.result.df_clean, self.result.profiles,
-                            self.result.col_stats, self.result.univariate, self.result.bivariate
-                        )
-                self.result.visual_specs = new_specs
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning("Failed to apply goal description: %s", e)
-=======
         base_specs = selector.select()
 
         goal = getattr(self, "goal_description", "").strip()
@@ -436,7 +403,6 @@ class AnalysisPipeline:
         self.result.visual_specs = base_specs
         logger.info("Chart step: %d charts from ChartSelector", len(base_specs))
 
->>>>>>> master
     def _step_dax(self):
         dax_gen = DAXGenerator(
             self.result.profiles,
