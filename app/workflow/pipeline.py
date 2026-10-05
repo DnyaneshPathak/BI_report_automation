@@ -338,12 +338,22 @@ class AnalysisPipeline:
         self.result.relevance_scores  = engine.compute_relevance_scores()
 
     def _step_kpis(self):
+<<<<<<< HEAD
         detector = KPIDetector(
             self.result.df_clean, self.result.profiles, self.result.col_stats
+=======
+        goal = getattr(self, "goal_description", "").strip()
+        detector = KPIDetector(
+            self.result.df_clean, self.result.profiles, self.result.col_stats, goal_description=goal
+>>>>>>> master
         )
         self.result.kpis = detector.detect()
 
     def _step_charts(self):
+<<<<<<< HEAD
+=======
+        # ── Stage 1: Legacy ChartSelector (covers all selected columns) ──────
+>>>>>>> master
         selector = ChartSelector(
             self.result.profiles,
             self.result.col_stats,
@@ -352,6 +362,7 @@ class AnalysisPipeline:
             self.result.multivariate,
             self.result.relevance_scores,
         )
+<<<<<<< HEAD
         self.result.visual_specs = selector.select()
         
         # Apply goal description if provided
@@ -375,6 +386,57 @@ class AnalysisPipeline:
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).warning("Failed to apply goal description: %s", e)
+=======
+        base_specs = selector.select()
+
+        goal = getattr(self, "goal_description", "").strip()
+
+        if goal:
+            # ── Stage 2: DescriptionPlanner — user intent drives chart list ──
+            try:
+                from bi_automation.intent.description_planner import DescriptionPlanner
+
+                planner = DescriptionPlanner(
+                    profiles   = self.result.profiles,
+                    col_stats  = self.result.col_stats,
+                    univariate = self.result.univariate,
+                    bivariate  = self.result.bivariate,
+                    df         = self.result.df_clean,
+                )
+                intent_specs = planner.plan(goal)
+
+                if intent_specs:
+                    # Build an id-set from intent specs to avoid duplicates
+                    intent_dimensions = {s.dimension for s in intent_specs if s.dimension}
+                    intent_measures   = {s.measure   for s in intent_specs if s.measure}
+                    intent_types      = {s.chart_type for s in intent_specs}
+
+                    # From base_specs, only keep charts that reference columns/types
+                    # NOT covered by the intent specs — avoids duplicate charts
+                    supplemental = [
+                        s for s in base_specs
+                        if (s.dimension not in intent_dimensions and s.measure not in intent_measures)
+                        or s.chart_type not in intent_types
+                    ]
+                    # Merge: intent specs first (highest priority), then supplemental
+                    combined = intent_specs + supplemental
+                    # Re-number priorities
+                    for i, s in enumerate(combined):
+                        s.priority = i + 1
+                    self.result.visual_specs = combined
+                    logger.info(
+                        "Chart step: %d intent-driven + %d supplemental = %d total",
+                        len(intent_specs), len(supplemental), len(combined)
+                    )
+                    return
+            except Exception as e:
+                logger.warning("DescriptionPlanner failed — falling back to ChartSelector: %s", e, exc_info=True)
+
+        # ── Fallback: use the base ChartSelector output as-is ──────────────
+        self.result.visual_specs = base_specs
+        logger.info("Chart step: %d charts from ChartSelector", len(base_specs))
+
+>>>>>>> master
     def _step_dax(self):
         dax_gen = DAXGenerator(
             self.result.profiles,

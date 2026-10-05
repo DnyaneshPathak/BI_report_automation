@@ -33,8 +33,24 @@ def validate_dataset(name: str, file_path: Path) -> int:
     passed = 0
     total  = 0
 
+<<<<<<< HEAD
     pipeline = AnalysisPipeline(file_path)
     result = pipeline.run()
+=======
+    pipeline = AnalysisPipeline(
+        file_path,
+        selected_features=None,
+        goal_description="Show trend over time and breakdown by category"
+    )
+    result = pipeline.run_phase1()
+    if result.success:
+        pipeline.set_configuration(
+            selected_features=list(result.profiles.keys()),
+            analysis_types=["univariate", "bivariate", "statistical"],
+            goal_description="Show trend over time and breakdown by category"
+        )
+        result = pipeline.run_phase2()
+>>>>>>> master
 
     # --- Pipeline success ---
     total += 1; passed += _check(result.success, "Pipeline completed without abort")
@@ -86,15 +102,24 @@ def validate_dataset(name: str, file_path: Path) -> int:
     total += 1; passed += _check(len(result.kpis) > 0, f"KPIs detected ({len(result.kpis)})")
 
     # --- Chart specs ---
+<<<<<<< HEAD
     total += 1; passed += _check(len(result.chart_specs) > 0, f"Chart specs generated ({len(result.chart_specs)})")
+=======
+    total += 1; passed += _check(len(result.visual_specs) > 0, f"Visual specs generated ({len(result.visual_specs)})")
+>>>>>>> master
 
     # --- Insights ---
     total += 1; passed += _check(len(result.insights) > 0, f"Insights generated ({len(result.insights)})")
 
     # --- Preview HTML ---
     total += 1; passed += _check(
+<<<<<<< HEAD
         isinstance(result.preview_html, dict) and "charts_p1_html" in result.preview_html, 
         f"Preview HTML dict generated ({len(result.preview_html)} keys)"
+=======
+        isinstance(result.preview_html, str) and len(result.preview_html) > 100,
+        f"Preview HTML generated ({len(result.preview_html)} chars)"
+>>>>>>> master
     )
 
     # --- Privacy ---

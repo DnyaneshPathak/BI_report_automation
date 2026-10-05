@@ -40,15 +40,26 @@ class ModelBuilder:
         profiles: Dict[str, ColumnProfile],
         dax_measures: List[DAXMeasure],
         kpis: List[KPI],
+<<<<<<< HEAD
         chart_specs: List[VisualSpec],
         dashboard_title: str,
+=======
+        chart_specs: Optional[List[VisualSpec]] = None,
+        visual_specs: Optional[List[VisualSpec]] = None,
+        dashboard_title: str = "Dashboard",
+>>>>>>> master
         table_name: str = "DataTable",
     ):
         self.df              = df
         self.profiles        = profiles
         self.dax_measures    = dax_measures
         self.kpis            = kpis
+<<<<<<< HEAD
         self.chart_specs     = chart_specs
+=======
+        # Accept either kwarg name; visual_specs takes precedence
+        self.visual_specs    = visual_specs if visual_specs is not None else (chart_specs or [])
+>>>>>>> master
         self.dashboard_title = dashboard_title
         self.table_name      = table_name
 
@@ -76,12 +87,55 @@ class ModelBuilder:
         with open(report_dir / "report.json", "w", encoding="utf-8") as f:
             json.dump(layout, f, indent=2)
 
+<<<<<<< HEAD
+=======
+        # Write report definition PBIR
+        pbir = {
+            "version": "4.0",
+            "datasetReference": {
+                "byPath": {
+                    "path": "../DataSet"
+                },
+                "byConnection": None
+            }
+        }
+        with open(report_dir / "definition.pbir", "w", encoding="utf-8") as f:
+            json.dump(pbir, f, indent=2)
+
+        # Write report item metadata
+        report_marker = {
+            "type": "Report",
+            "displayName": "Report"
+        }
+        with open(report_dir / "item.metadata.json", "w", encoding="utf-8") as f:
+            json.dump(report_marker, f, indent=2)
+
+        # Write dataset item metadata
+        dataset_marker = {
+            "type": "SemanticModel",
+            "displayName": "DataSet"
+        }
+        with open(dataset_dir / "item.metadata.json", "w", encoding="utf-8") as f:
+            json.dump(dataset_marker, f, indent=2)
+
+        # Write dataset definition (pbism) required for SemanticModel
+        pbism = {
+            "version": "1.0",
+            "settings": {}
+        }
+        with open(dataset_dir / "definition.pbism", "w", encoding="utf-8") as f:
+            json.dump(pbism, f, indent=2)
+
+>>>>>>> master
         # Write .pbip project file
         pbip = {
             "version": "1.0",
             "artifacts": [
                 {"report": {"path": "Report"}},
+<<<<<<< HEAD
                 {"dataset": {"path": "DataSet"}},
+=======
+>>>>>>> master
             ],
             "settings": {"enableAutoRecovery": True},
         }
@@ -218,7 +272,11 @@ class ModelBuilder:
         sections = []
         pages = {1: "Executive Overview", 2: "Detailed Analysis", 3: "Trend Analysis", 4: "Statistical Insights"}
         for page_num, page_name in pages.items():
+<<<<<<< HEAD
             page_specs = [s for s in self.chart_specs if s.page == page_num]
+=======
+            page_specs = [s for s in self.visual_specs if (s.page or 1) == page_num]
+>>>>>>> master
             if not page_specs and page_num > 1:
                 continue
             visuals = self._build_page_visuals(page_specs, page_num)
@@ -245,21 +303,90 @@ class ModelBuilder:
 
     def _build_page_visuals(self, specs: List[VisualSpec], page: int) -> List[dict]:
         visuals = []
+<<<<<<< HEAD
         cols = 2
         cell_w, cell_h = 440, 260
         pad = 16
+=======
+        pad = 16
+        y_offset = 10
+        
+        # Add KPI cards
+        if self.kpis:
+            kpi_w = 220
+            kpi_h = 80
+            for i, kpi in enumerate(self.kpis[:4]):
+                x = pad + i * (kpi_w + pad)
+                y = y_offset
+                visual_name = uuid.uuid4().hex
+                measure_name = kpi.dax_measure.split("=")[0].strip().strip("[]")
+                
+                visuals.append({
+                    "x": x, "y": y,
+                    "z": 100 + i,
+                    "width": kpi_w,
+                    "height": kpi_h,
+                    "config": json.dumps({
+                        "name": visual_name,
+                        "layouts": [{"id": 0, "position": {"x": x, "y": y, "width": kpi_w, "height": kpi_h}}],
+                        "singleVisual": {
+                            "visualType": "card",
+                            "projections": {
+                                "Values": [{"queryRef": measure_name}],
+                            },
+                            "prototypeQuery": {
+                                "Version": 2,
+                                "From": [{"Name": "t", "Entity": self.table_name, "Type": 0}],
+                                "Select": [
+                                    {"Measure": {"Expression": {"SourceRef": {"Source": "t"}}, "Property": measure_name}, "Name": measure_name}
+                                ],
+                            },
+                            "title": {"show": False},
+                        },
+                    }),
+                })
+            y_offset += kpi_h + pad
+
+        cols = 2
+        cell_w, cell_h = 440, 260
+>>>>>>> master
         for i, spec in enumerate(specs[:6]):
             row = i // cols
             col = i % cols
             x = pad + col * (cell_w + pad)
+<<<<<<< HEAD
             y = 80 + row * (cell_h + pad)
             visual_type = self._pbi_visual_type(spec.chart_type)
+=======
+            y = y_offset + row * (cell_h + pad)
+            visual_type = self._pbi_visual_type(spec.chart_type)
+            visual_name = uuid.uuid4().hex
+            
+            # Use appropriate projections based on visual type
+            projections = {
+                "Category": [{"queryRef": spec.dimension}],
+                "Y": [{"queryRef": spec.measure}],
+            }
+            if visual_type in ("donutChart", "pieChart", "treemap"):
+                projections = {
+                    "Category": [{"queryRef": spec.dimension}],
+                    "Y": [{"queryRef": spec.measure}],
+                }
+            elif visual_type == "scatterChart":
+                projections = {
+                    "Category": [{"queryRef": spec.dimension}],
+                    "X": [{"queryRef": spec.dimension}],
+                    "Y": [{"queryRef": spec.measure}],
+                }
+                
+>>>>>>> master
             visuals.append({
                 "x": x, "y": y,
                 "z": 1000 + i,
                 "width": cell_w,
                 "height": cell_h,
                 "config": json.dumps({
+<<<<<<< HEAD
                     "name": spec.id,
                     "layouts": [{"id": 0, "position": {"x": x, "y": y, "width": cell_w, "height": cell_h}}],
                     "singleVisual": {
@@ -268,6 +395,13 @@ class ModelBuilder:
                             "Category": [{"queryRef": spec.dimension}],
                             "Y": [{"queryRef": spec.measure}],
                         },
+=======
+                    "name": visual_name,
+                    "layouts": [{"id": 0, "position": {"x": x, "y": y, "width": cell_w, "height": cell_h}}],
+                    "singleVisual": {
+                        "visualType": visual_type,
+                        "projections": projections,
+>>>>>>> master
                         "prototypeQuery": {
                             "Version": 2,
                             "From": [{"Name": "t", "Entity": self.table_name, "Type": 0}],
@@ -309,12 +443,27 @@ class ModelBuilder:
     def _pbi_visual_type(chart_type: str) -> str:
         mapping = {
             "line": "lineChart",
+<<<<<<< HEAD
+=======
+            "area": "areaChart",
+>>>>>>> master
             "multi_line": "lineChart",
             "bar": "barChart",
             "histogram": "columnChart",
             "donut": "donutChart",
+<<<<<<< HEAD
             "treemap": "treemap",
             "scatter": "scatterChart",
             "stacked_bar": "barChart",
+=======
+            "pie": "pieChart",
+            "treemap": "treemap",
+            "scatter": "scatterChart",
+            "stacked_bar": "stackedBarChart",
+            "heatmap": "tableEx",
+            "waterfall": "waterfallChart",
+            "funnel": "funnel",
+            "gauge": "gauge",
+>>>>>>> master
         }
         return mapping.get(chart_type, "columnChart")

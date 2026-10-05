@@ -105,7 +105,13 @@ class ChartSelector:
             if n_cats == 0:
                 continue
 
+<<<<<<< HEAD
             if n_cats <= MAX_DONUT_CATEGORIES:
+=======
+            if n_cats <= 4:
+                ctype = "pie"
+            elif n_cats <= MAX_DONUT_CATEGORIES:
+>>>>>>> master
                 ctype = "donut"
             elif n_cats <= 15:
                 ctype = "bar"

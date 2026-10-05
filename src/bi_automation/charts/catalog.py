@@ -105,7 +105,13 @@ class ChartSelector:
             if n_cats == 0:
                 continue
 
+<<<<<<< HEAD
             if n_cats <= MAX_DONUT_CATEGORIES:
+=======
+            if n_cats <= 4:
+                ctype = "pie"
+            elif n_cats <= MAX_DONUT_CATEGORIES:
+>>>>>>> master
                 ctype = "donut"
             elif n_cats <= 15:
                 ctype = "bar"
@@ -209,7 +215,19 @@ class ChartSelector:
     # ── Multivariate ──────────────────────────────────────────────────────────
     def _multivariate_charts(self) -> List[VisualSpec]:
         specs = []
+<<<<<<< HEAD
         for mv in self.multivariate_results[:2]:
+=======
+        for mv in self.multivariate_results:
+            # Only include if the numeric and primary categorical column are statistically related
+            pair = next((p for p in self.bivariate_pairs 
+                         if (p.col_a == mv.num_col and p.col_b == mv.cat_col) or 
+                            (p.col_b == mv.num_col and p.col_a == mv.cat_col)), None)
+            
+            if pair and hasattr(pair, 'stat_significant') and not pair.stat_significant:
+                continue # Skip unrelated attributes
+                
+>>>>>>> master
             if mv.time_col:
                 # Stacked line per category
                 specs.append(VisualSpec(
@@ -237,6 +255,13 @@ class ChartSelector:
                     priority  = 4,
                     reason    = "Numeric × Category × Category analysis.",
                 ))
+<<<<<<< HEAD
+=======
+            
+            if len(specs) >= 2:
+                break
+                
+>>>>>>> master
         return specs
 
     # ── Limit per page ────────────────────────────────────────────────────────

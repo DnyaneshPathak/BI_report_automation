@@ -12,6 +12,7 @@
         <input type="hidden" name="sid" value="{{ sid }}">
         
         <div class="form-group" style="margin-bottom: 2rem;">
+<<<<<<< HEAD
             <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Analysis Goal / Description <span style="color:#e11d48">*</span></label>
             <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Describe what you are trying to achieve (e.g., "Analyze revenue by region" or "Find the root cause of customer churn").</p>
             <textarea name="goal_description" rows="4" style="width: 100%; padding: 1rem; border: 1px solid #cbd5e1; border-radius: 8px; font-family: inherit; font-size: 1rem;" required placeholder="Describe your analytical goal here..."></textarea>
@@ -29,6 +30,25 @@
                         <span style="font-size: 1rem;">{{ col }}</span>
                     </label>
                     <input type="text" name="desc_{{ col }}" placeholder="Describe specific analysis for {{ col }} (optional)..." style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 4px; font-family: inherit; font-size: 0.95rem;">
+=======
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Global Dashboard Overview (Optional)</label>
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Provide high-level instructions (e.g. "Generate KPI cards for Sales, give textual insights on Age, overall performance analysis...").</p>
+            <textarea name="goal_description" rows="3" placeholder="Describe the overall goals for this dashboard..." style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; font-family: inherit; font-size: 0.95rem; resize: vertical;"></textarea>
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 2rem;">
+            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Select Features & Provide Descriptions</label>
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Uncheck columns you want to ignore. For selected columns, describe the specific analysis you want (e.g., "show trend over time").</p>
+            
+            <div style="display: flex; flex-direction: column; gap: 15px; background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; max-height: 500px; overflow-y: auto;">
+                {% for col in columns %}
+                <div style="padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; transition: all 0.2s ease;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 600; margin-bottom: 10px;">
+                        <input type="checkbox" name="selected_features" value="{{ col }}" checked style="width: 18px; height: 18px; accent-color: var(--primary);">
+                        <span style="font-size: 1.05rem; color: #0f172a;">{{ col }}</span>
+                    </label>
+                    <textarea name="desc_{{ col }}" rows="2" placeholder="Describe the analysis you want for {{ col }}..." style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; font-family: inherit; font-size: 0.95rem; resize: vertical;"></textarea>
+>>>>>>> master
                 </div>
                 {% endfor %}
             </div>
@@ -82,4 +102,34 @@
         </div>
     </form>
 </div>
+<<<<<<< HEAD
+=======
+
+<script>
+document.getElementById('configure-form').addEventListener('submit', function(e) {
+    const checkedFeatures = document.querySelectorAll('input[name="selected_features"]:checked').length;
+    
+    const isBivariate = document.querySelector('input[name="analysis_types"][value="bivariate"]').checked;
+    const isMultivariate = document.querySelector('input[name="analysis_types"][value="multivariate"]').checked;
+    
+    if (isMultivariate && checkedFeatures < 3) {
+        e.preventDefault();
+        alert('You have selected Multivariate analysis, which requires at least 3 features. Please select more columns or uncheck Multivariate analysis.');
+        return;
+    }
+    
+    if (isBivariate && checkedFeatures < 2) {
+        e.preventDefault();
+        alert('You have selected Bivariate analysis, which requires at least 2 features. Please select more columns or uncheck Bivariate analysis.');
+        return;
+    }
+    
+    if (checkedFeatures === 0) {
+        e.preventDefault();
+        alert('Please select at least one feature to analyze.');
+        return;
+    }
+});
+</script>
+>>>>>>> master
 {% endblock %}
