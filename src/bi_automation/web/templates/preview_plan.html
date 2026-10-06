@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard Plan — BI Report Automation{% endblock %}
+
+{% block content %}
+<div class="hero" style="max-width:800px; margin: 40px auto; padding: 2rem;">
+    <h1 class="hero-title" style="font-size: 2.2rem;">Plan <span>Generated</span></h1>
+    <p class="hero-sub" style="margin-bottom: 2rem;">The Ollama Brain has translated your prompt into the following deterministic JSON plan. Execution (Phase 5/7) will build this into a dashboard.</p>
+
+    <div style="background: #0f172a; color: #f8fafc; padding: 1.5rem; border-radius: 8px; overflow-x: auto; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.9rem;">
+        <pre style="margin: 0;"><code>{{ plan_json }}</code></pre>
+    </div>
+
+    <div style="margin-top: 2rem; display: flex; gap: 1rem;">
+        <a href="{{ url_for('configure') }}" class="btn-secondary">Start Over</a>
+        <button disabled class="btn-primary" style="opacity: 0.5; cursor: not-allowed;">Execute Plan (Next Phase)</button>
+    </div>
+</div>
+{% endblock %}

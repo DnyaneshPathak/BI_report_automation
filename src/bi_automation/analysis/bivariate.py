@@ -22,8 +22,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from preprocessing.datatype_detector import ColumnProfile
-from config import CORRELATION_STRONG_THRESHOLD, MIN_ROWS_FOR_STAT_TEST
+from bi_automation.preprocessing.type_detector import ColumnProfile
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +132,7 @@ class BivariateAnalyser:
             pass
 
         r_val = abs(pair.pearson_r or 0)
-        if r_val >= CORRELATION_STRONG_THRESHOLD:
+        if r_val >= 0.7:
             pair.correlation_strength = "strong"
             direction = "positive" if (pair.pearson_r or 0) > 0 else "negative"
             pair.insight = (
@@ -153,7 +152,7 @@ class BivariateAnalyser:
         category = self.df[cat_col].astype(str)
 
         df_temp = pd.DataFrame({"num": numeric, "cat": category}).dropna()
-        if len(df_temp) < MIN_ROWS_FOR_STAT_TEST:
+        if len(df_temp) < 30:
             return None
 
         groups = df_temp.groupby("cat")["num"]
@@ -199,7 +198,7 @@ class BivariateAnalyser:
     # ── Categorical × Categorical ─────────────────────────────────────────────
     def _cat_cat(self, ca: str, cb: str) -> Optional[BivariatePair]:
         df_temp = self.df[[ca, cb]].dropna().astype(str)
-        if len(df_temp) < MIN_ROWS_FOR_STAT_TEST:
+        if len(df_temp) < 30:
             return None
 
         ct = pd.crosstab(df_temp[ca], df_temp[cb])

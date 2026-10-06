@@ -12,16 +12,15 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from config import PALETTE
-from dashboard.kpi_detector import KPI
+from bi_automation.config.palette import CHART_COLORS
+from bi_automation.dashboard.kpi_detector import KPI
 from bi_automation.models.domain import VisualSpec
-from analysis.insight_engine import Insight
+from bi_automation.analysis.insights import Insight
 from bi_automation.models.data_quality import DataQualitySummary
 
 logger = logging.getLogger(__name__)
 
 # ECharts colors
-CHART_COLORS = PALETTE["chart_colors"]
 
 class PreviewRenderer:
 

@@ -35,25 +35,21 @@ from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 
-from security.file_security import validate_file, sanitize_filename
-from security.privacy import assert_local_only, cleanup_temp_files
-from ingestion.excel_reader import ExcelReader, WorkbookIngestionResult
-from preprocessing.datatype_detector import DataTypeDetector, ColumnProfile
-from preprocessing.cleaner import DataCleaner
-from preprocessing.missing_values import MissingValueHandler
-from preprocessing.outliers import OutlierAnalyser
-from analysis.profiler import DataProfiler, ColumnStats
-from analysis.univariate import UnivariateAnalyser, UnivariateResult
-from analysis.bivariate import BivariateAnalyser, BivariatePair
-from analysis.multivariate import MultivariateAnalyser, MultivariateResult
-from analysis.statistical import StatisticalAnalyser, StatTestResult
-from analysis.probability import ProbabilityAnalyser, ProbabilityResult
-from analysis.insight_engine import InsightEngine, Insight, AnalyticalRelevanceScore
-from dashboard.kpi_detector import KPIDetector, KPI
-from dashboard.chart_selector import ChartSelector, ChartSpec
-from dashboard.dax_generator import DAXGenerator, DAXMeasure
-from dashboard.preview_renderer import PreviewRenderer
-from config import TEMP_DIR
+from bi_automation.security.file_validator import validate_file, sanitize_filename
+from bi_automation.ingestion.loader import DataLoader, WorkbookIngestionResult
+from bi_automation.preprocessing.type_detector import DataTypeDetector, ColumnProfile
+from bi_automation.profiling.profiler import DataProfiler, ColumnStats
+from bi_automation.analysis.univariate import UnivariateAnalyser, UnivariateResult
+from bi_automation.analysis.bivariate import BivariateAnalyser, BivariatePair
+from bi_automation.analysis.multivariate import MultivariateAnalyser, MultivariateResult
+from bi_automation.analysis.statistical import StatisticalAnalyser, StatTestResult
+from bi_automation.analysis.probability import ProbabilityAnalyser, ProbabilityResult
+from bi_automation.analysis.insights import InsightEngine, Insight, AnalyticalRelevanceScore
+from bi_automation.dashboard.kpi_detector import KPIDetector, KPI
+from bi_automation.charts.catalog import ChartSelector
+from bi_automation.powerbi.dax_generator import DAXGenerator, DAXMeasure
+from bi_automation.web.preview_renderer import PreviewRenderer
+from bi_automation.config.settings import TEMP_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +65,10 @@ class StepStatus:
 @dataclass
 class PipelineResult:
     success: bool = False
+    rows_loaded: int = 0
+    rows_used: int = 0
+    rows_filtered_by_request: int = 0
+    preparation_log: List[str] = field(default_factory=list)
     error: Optional[str] = None
     steps: List[StepStatus] = field(default_factory=list)
     # Analysis data
@@ -119,34 +119,73 @@ class AnalysisPipeline:
         self.progress_callback = progress_callback or (lambda step, status, msg: None)
         self.result            = PipelineResult()
         self.result.source_path = file_path
-
-    def run(self) -> PipelineResult:
-        assert_local_only()
-
+        
+    def run_phase1(self) -> PipelineResult:
         ok, err = validate_file(self.file_path)
         if not ok:
             self.result.error = err
             return self.result
 
         self.result.safe_filename = sanitize_filename(self.file_path.stem)
-
+        
         steps = [
-            ("Reading Excel",                self._step_ingest),
-            ("Profiling Data",               self._step_profile),
+            ("Reading Data",                 self._step_ingest),
             ("Detecting Data Types",         self._step_detect_types),
-            ("Cleaning Data",                self._step_clean),
-            ("Handling Missing Values",      self._step_missing),
-            ("Detecting Outliers",           self._step_outliers),
-            ("Running Univariate Analysis",  self._step_univariate),
-            ("Running Bivariate Analysis",   self._step_bivariate),
-            ("Running Multivariate Analysis",self._step_multivariate),
-            ("Running Statistical Analysis", self._step_statistical),
-            ("Running Probability Analysis", self._step_probability),
-            ("Generating Insights",          self._step_insights),
-            ("Detecting KPIs",               self._step_kpis),
-            ("Selecting Charts",             self._step_charts),
-            ("Building Preview",             self._step_preview),
         ]
+        self._execute_steps(steps)
+        return self.result
+        
+    def run_phase2(self, prompt: str) -> 'PipelineResult':
+        assert self.result.rows_used + self.result.rows_filtered_by_request == self.result.rows_loaded, "Invariant violated: hidden row drop detected."
+        
+        from bi_automation.planning.orchestrator import PlanOrchestrator
+        orchestrator = PlanOrchestrator()
+        
+        self.progress_callback("Planning", "running", "Analyzing your request...")
+        try:
+            plan = orchestrator.generate_plan(prompt, self.result.schema_card)
+            self.result.plan = plan
+            self.progress_callback("Planning", "done", "Plan generated")
+        except Exception as e:
+            self.progress_callback("Planning", "error", str(e))
+            self.result.error = str(e)
+            self.result.success = False
+            return self.result
+
+
+        try:
+            from bi_automation.engine.executor import PlanExecutor
+            self.progress_callback("Executing", "running", "Computing figures securely...")
+            executor = PlanExecutor(self.result.df_clean)
+            computed_figures = executor.execute(plan)
+            self.result.computed_figures = computed_figures
+            self.progress_callback("Executing", "done", "Execution complete")
+            
+            # Populate preview context dict
+            import json
+            self.result.preview_html = {
+                "title": self.result.dashboard_title or "Dashboard Preview",
+                "data_integrity": {
+                    "rows_loaded": self.result.rows_loaded,
+                    "rows_used": self.result.rows_used,
+                    "rows_filtered": self.result.rows_filtered_by_request
+                },
+                "plan_json": json.dumps(plan),
+                "computed_figures_json": json.dumps(computed_figures)
+            }
+        except Exception as e:
+            self.progress_callback("Executing", "error", str(e))
+            self.result.error = str(e)
+            self.result.success = False
+            return self.result
+
+        self.result.success = True
+        return self.result
+
+
+        
+    def _execute_steps(self, steps):
+
 
         for step_name, step_fn in steps:
             step = StepStatus(name=step_name, status="running")
@@ -175,62 +214,45 @@ class AnalysisPipeline:
     # ── Steps ─────────────────────────────────────────────────────────────────
 
     def _step_ingest(self):
-        reader = ExcelReader(self.file_path)
+        reader = DataLoader(self.file_path)
         ingestion = reader.read()
         if ingestion.errors:
             raise RuntimeError("; ".join(ingestion.errors))
         self.result.ingestion = ingestion
-        # Use primary sheet
         primary = ingestion.primary_sheet
         if not primary or primary not in ingestion.data_frames:
             raise RuntimeError("No usable data sheet found in the workbook.")
         self.result.df_clean = ingestion.data_frames[primary]
+        self.result.rows_loaded = len(self.result.df_clean)
+        self.result.rows_used = len(self.result.df_clean)
         self.result.dashboard_title = self._infer_title(self.file_path.stem)
-
-    def _step_profile(self):
-        # Initial profiles before cleaning
-        detector = DataTypeDetector(self.result.df_clean)
-        self.result.profiles = detector.detect_all()
+        self.result.preparation_log.append(f"Loaded {self.result.rows_loaded} rows from {primary}.")
 
     def _step_detect_types(self):
-        # Re-run after initial profile for logging (profiles already set)
-        pass   # Profile was done in previous step
-
-    def _step_clean(self):
-        cleaner = DataCleaner(self.result.df_clean, self.result.profiles)
-        df_clean, log = cleaner.clean()
-        self.result.df_clean = df_clean
-        self.result.preprocessing_log.extend(log)
-        # Re-detect types on cleaned data
-        detector = DataTypeDetector(df_clean)
+        from bi_automation.preprocessing.type_detector import DataTypeDetector
+        from bi_automation.profiling.profiler import DataProfiler
+        
+        detector = DataTypeDetector(self.result.df_clean)
         self.result.profiles = detector.detect_all()
+        
+        profiler = DataProfiler(self.result.df_clean, self.result.profiles)
+        self.result.col_stats = profiler.profile_all()
+        
+        # Schema card is generated for the LLM
+        self.result.schema_card = []
+        for col, stats in self.result.col_stats.items():
+            card = {
+                "name": col,
+                "role": stats.feature_role,
+                "unique_values": stats.unique_count
+            }
+            if stats.feature_role == "dimension" and stats.unique_count <= 20:
+                # Add sample categories for low cardinality dimensions
+                if stats.freq_distribution:
+                    card["categories"] = list(stats.freq_distribution.keys())[:20]
+            self.result.schema_card.append(card)
 
-    def _step_missing(self):
-        handler = MissingValueHandler(self.result.df_clean, self.result.profiles)
-        df_clean, log, missing_summary = handler.analyse_and_impute()
-        self.result.df_clean = df_clean
-        self.result.preprocessing_log.extend(log)
-        # Build quality summary
-        total = len(df_clean)
-        total_missing = df_clean.isna().sum().sum()
-        profiles = self.result.profiles
-        self.result.data_quality_summary = {
-            "rows": total,
-            "columns": len(df_clean.columns),
-            "missing_pct": round(total_missing / max(total * len(df_clean.columns), 1) * 100, 2),
-            "duplicate_pct": 0.0,   # already removed
-            "numeric_count": sum(1 for p in profiles.values() if p.analytical_type in ("continuous", "discrete_numeric")),
-            "categorical_count": sum(1 for p in profiles.values() if p.analytical_type in ("categorical_nominal", "categorical_ordinal", "binary")),
-            "date_count": sum(1 for p in profiles.values() if p.analytical_type == "datetime"),
-            "identifier_count": sum(1 for p in profiles.values() if p.analytical_type == "identifier"),
-            "outlier_count": 0,   # updated after outlier step
-        }
 
-    def _step_outliers(self):
-        analyser = OutlierAnalyser(self.result.df_clean, self.result.profiles)
-        outlier_results = analyser.analyse()
-        total_outliers = sum(r.total_detected for r in outlier_results.values())
-        self.result.data_quality_summary["outlier_count"] = total_outliers
 
     def _step_univariate(self):
         # Build full column stats

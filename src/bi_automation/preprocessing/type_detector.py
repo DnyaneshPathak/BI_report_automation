@@ -23,7 +23,6 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from config import ID_MAX_UNIQUE_RATIO
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +95,7 @@ class DataTypeDetector:
 
         if is_numeric:
             # --- Step 2a: Identifier heuristic ---
-            if unique_ratio > ID_MAX_UNIQUE_RATIO or _ID_PATTERNS.search(col):
+            if unique_ratio > 0.95 or _ID_PATTERNS.search(col):
                 if self._looks_like_id(series, numeric_series):
                     profile.analytical_type    = "identifier"
                     profile.feature_role       = "Identifier"
@@ -220,7 +219,7 @@ class DataTypeDetector:
         """Heuristic: integer with very high unique ratio."""
         all_int = (numeric.dropna() % 1 == 0).all()
         unique_ratio = series.nunique() / max(len(series.dropna()), 1)
-        return all_int and unique_ratio > ID_MAX_UNIQUE_RATIO
+        return all_int and unique_ratio > 0.95
 
     def _is_binary(self, series: pd.Series) -> bool:
         vals = {str(v).strip().lower() for v in series.dropna().unique()}

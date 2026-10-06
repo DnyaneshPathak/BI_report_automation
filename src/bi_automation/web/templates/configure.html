@@ -1,112 +1,93 @@
 {% extends "layout.html" %}
 
-{% block title %}Configure Analysis — BI Report Automation{% endblock %}
+{% block title %}Ask BI Report Automation{% endblock %}
 
 {% block content %}
 <div class="hero" style="max-width:800px; margin: 40px auto; padding: 2rem;">
-    <h1 class="hero-title" style="font-size: 2.2rem;">Configure Your <span>Analysis</span></h1>
-    <p class="hero-sub" style="margin-bottom: 2rem;">Select the features (columns) you want to include in your BI report and provide a brief description of your goals.</p>
+    <h1 class="hero-title" style="font-size: 2.2rem;">What would you like to <span>know</span>?</h1>
+    <p class="hero-sub" style="margin-bottom: 2rem;">Describe the dashboard you want to build using plain language. The BI Brain will figure out the rest.</p>
 
-    <form id="configure-form" action="{{ url_for('start_analysis') }}" method="POST">
-        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="sid" value="{{ sid }}">
-        
-        <div class="form-group" style="margin-bottom: 2rem;">
-            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Global Dashboard Overview (Optional)</label>
-            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Provide high-level instructions (e.g. "Generate KPI cards for Sales, give textual insights on Age, overall performance analysis...").</p>
-            <textarea name="goal_description" rows="3" placeholder="Describe the overall goals for this dashboard..." style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; font-family: inherit; font-size: 0.95rem; resize: vertical;"></textarea>
-        </div>
-        
-        <div class="form-group" style="margin-bottom: 2rem;">
-            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Select Features & Provide Descriptions</label>
-            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Uncheck columns you want to ignore. For selected columns, describe the specific analysis you want (e.g., "show trend over time").</p>
-            
-            <div style="display: flex; flex-direction: column; gap: 15px; background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; max-height: 500px; overflow-y: auto;">
-                {% for col in columns %}
-                <div style="padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; transition: all 0.2s ease;">
-                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 600; margin-bottom: 10px;">
-                        <input type="checkbox" name="selected_features" value="{{ col }}" checked style="width: 18px; height: 18px; accent-color: var(--primary);">
-                        <span style="font-size: 1.05rem; color: #0f172a;">{{ col }}</span>
-                    </label>
-                    <textarea name="desc_{{ col }}" rows="2" placeholder="Describe the analysis you want for {{ col }}..." style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; font-family: inherit; font-size: 0.95rem; resize: vertical;"></textarea>
+    <!-- Data Strip -->
+    <details style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 2rem; cursor: pointer;">
+        <summary style="font-weight: 600; font-size: 1.05rem; display: flex; align-items: center; justify-content: space-between; list-style: none;">
+            <span><span style="font-size: 1.2rem; margin-right: 8px;">📊</span> Your Data: <strong>{{ filename }}</strong> ({{ rows }} rows &times; {{ cols }} columns)</span>
+            <span style="color: #64748b; font-size: 0.9rem;">Click to expand</span>
+        </summary>
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0;">
+            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 0.5rem;">Available columns and their detected roles:</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                {% for col in schema_card %}
+                <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+                    <strong style="color: #0f172a;">{{ col.name }}</strong>
+                    <span style="background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">{{ col.role }}</span>
                 </div>
                 {% endfor %}
             </div>
         </div>
+    </details>
+
+    <!-- Prompt Form -->
+    <form id="configure-form" action="{{ url_for('start_analysis') }}" method="POST">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="sid" value="{{ sid }}">
         
-        <div class="form-group" style="margin-bottom: 2rem;">
-            <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 1.1rem;">Select Analysis Types</label>
-            <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 1rem;">Choose the specific analytical techniques to apply to your selected features.</p>
-            
-            <div style="display: flex; flex-direction: column; gap: 12px; background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
-                    <input type="checkbox" name="analysis_types" value="univariate" checked style="width: 18px; height: 18px; margin-top: 2px;">
-                    <div>
-                        <strong style="display: block; font-size: 1rem;">Univariate analysis</strong>
-                        <span style="font-size: 0.85rem; color: #64748b;">Analyze each feature individually (distributions, central tendencies, variance).</span>
-                    </div>
-                </label>
-                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
-                    <input type="checkbox" name="analysis_types" value="bivariate" checked style="width: 18px; height: 18px; margin-top: 2px;">
-                    <div>
-                        <strong style="display: block; font-size: 1rem;">Bivariate analysis</strong>
-                        <span style="font-size: 0.85rem; color: #64748b;">Analyze relationships and correlations between two features.</span>
-                    </div>
-                </label>
-                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
-                    <input type="checkbox" name="analysis_types" value="multivariate" checked style="width: 18px; height: 18px; margin-top: 2px;">
-                    <div>
-                        <strong style="display: block; font-size: 1rem;">Multivariate analysis</strong>
-                        <span style="font-size: 0.85rem; color: #64748b;">Analyze complex interactions among three or more features.</span>
-                    </div>
-                </label>
-                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
-                    <input type="checkbox" name="analysis_types" value="statistical" checked style="width: 18px; height: 18px; margin-top: 2px;">
-                    <div>
-                        <strong style="display: block; font-size: 1rem;">Statistical analysis</strong>
-                        <span style="font-size: 0.85rem; color: #64748b;">Perform formal statistical testing (ANOVA, Chi-Square, t-tests).</span>
-                    </div>
-                </label>
-                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
-                    <input type="checkbox" name="analysis_types" value="probability" checked style="width: 18px; height: 18px; margin-top: 2px;">
-                    <div>
-                        <strong style="display: block; font-size: 1rem;">Probability analysis</strong>
-                        <span style="font-size: 0.85rem; color: #64748b;">Calculate conditional probabilities, Bayes rules, and transition matrices.</span>
-                    </div>
-                </label>
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+            <textarea name="user_prompt" id="user_prompt" rows="5" 
+                placeholder="E.g. Show monthly sales trend by region as a line chart, a KPI for total tickets, and a table of top 10 countries by revenue..." 
+                style="width: 100%; padding: 1rem; border: 2px solid #cbd5e1; border-radius: 8px; font-family: inherit; font-size: 1.05rem; resize: vertical; outline: none; transition: border-color 0.2s;"
+                onfocus="this.style.borderColor='var(--primary)';" 
+                onblur="this.style.borderColor='#cbd5e1';"
+                required
+                maxlength="2000"></textarea>
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #94a3b8; margin-top: 0.5rem;">
+                <span>Press Ctrl+Enter to submit</span>
+                <span id="char_count">0 / 2000</span>
             </div>
         </div>
         
-        <div style="text-align: right; padding-bottom: 2rem;">
-            <button type="submit" style="display: inline-block; padding: 1rem 2.5rem; font-size: 1.1rem; background: linear-gradient(135deg, #2563eb, #3b82f6); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">Start Analysis →</button>
+        <div style="display: flex; gap: 15px; margin-top: 1rem; align-items: center;">
+            <button type="submit" class="btn-primary" style="font-size: 1.1rem; padding: 0.75rem 2rem; display: flex; align-items: center; gap: 8px;" id="generate_btn">
+                <span>✨ Generate</span>
+            </button>
+            <button type="button" class="btn-secondary" style="font-size: 0.95rem;" onclick="document.getElementById('user_prompt').value = 'Generate a quick overview dashboard with key metrics and trends.'; document.getElementById('configure-form').submit();">
+                Quick Overview
+            </button>
         </div>
     </form>
 </div>
 
 <script>
-document.getElementById('configure-form').addEventListener('submit', function(e) {
-    const checkedFeatures = document.querySelectorAll('input[name="selected_features"]:checked').length;
-    
-    const isBivariate = document.querySelector('input[name="analysis_types"][value="bivariate"]').checked;
-    const isMultivariate = document.querySelector('input[name="analysis_types"][value="multivariate"]').checked;
-    
-    if (isMultivariate && checkedFeatures < 3) {
-        e.preventDefault();
-        alert('You have selected Multivariate analysis, which requires at least 3 features. Please select more columns or uncheck Multivariate analysis.');
-        return;
-    }
-    
-    if (isBivariate && checkedFeatures < 2) {
-        e.preventDefault();
-        alert('You have selected Bivariate analysis, which requires at least 2 features. Please select more columns or uncheck Bivariate analysis.');
-        return;
-    }
-    
-    if (checkedFeatures === 0) {
-        e.preventDefault();
-        alert('Please select at least one feature to analyze.');
-        return;
-    }
-});
+    document.addEventListener('DOMContentLoaded', () => {
+        const textarea = document.getElementById('user_prompt');
+        const charCount = document.getElementById('char_count');
+        const generateBtn = document.getElementById('generate_btn');
+
+        // Character count
+        textarea.addEventListener('input', () => {
+            const length = textarea.value.length;
+            charCount.textContent = `${length} / 2000`;
+            generateBtn.disabled = length === 0;
+            if (length === 0) {
+                generateBtn.style.opacity = '0.5';
+                generateBtn.style.cursor = 'not-allowed';
+            } else {
+                generateBtn.style.opacity = '1';
+                generateBtn.style.cursor = 'pointer';
+            }
+        });
+
+        // Initialize state
+        textarea.dispatchEvent(new Event('input'));
+
+        // Ctrl+Enter to submit
+        textarea.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
+                if (textarea.value.length > 0) {
+                    document.getElementById('configure-form').submit();
+                }
+            }
+        });
+    });
 </script>
 {% endblock %}

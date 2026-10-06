@@ -20,8 +20,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from preprocessing.datatype_detector import ColumnProfile
-from preprocessing.outliers import OutlierAnalyser
+from bi_automation.preprocessing.type_detector import ColumnProfile
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +72,6 @@ class DataProfiler:
         self.n_rows   = len(df)
 
     def profile_all(self) -> Dict[str, ColumnStats]:
-        # Run outlier analysis first
-        outlier_results = OutlierAnalyser(self.df, self.profiles).analyse()
-
         column_stats: Dict[str, ColumnStats] = {}
         for col, profile in self.profiles.items():
             if col not in self.df.columns:
@@ -93,7 +89,7 @@ class DataProfiler:
             cs.missing_pct   = round(cs.missing_count / max(self.n_rows, 1) * 100, 2)
 
             if profile.analytical_type in ("continuous", "discrete_numeric"):
-                self._profile_numeric(series, cs, outlier_results.get(col))
+                self._profile_numeric(series, cs, None)
             elif profile.analytical_type in ("categorical_nominal", "categorical_ordinal", "binary"):
                 self._profile_categorical(series, cs)
             elif profile.analytical_type == "datetime":
@@ -149,3 +145,35 @@ class DataProfiler:
         cs.earliest_date   = str(dt.min().date())
         cs.latest_date     = str(dt.max().date())
         cs.date_range_days = (dt.max() - dt.min()).days
+
+    def generate_schema_card(self, col_stats: Dict[str, ColumnStats], llm_send_sample_labels: bool = False) -> List[Dict[str, Any]]:
+        """Generate the Schema Card expected by the LLM Planner."""
+        schema_card = []
+        for col_name, stats in col_stats.items():
+            # Sanitize column name slightly for LLM safety (cap length)
+            safe_name = str(col_name)[:80].replace('\n', ' ').replace('\r', '')
+            
+            card = {
+                "name": safe_name,
+                "role": stats.feature_role,
+                "dtype": stats.analytical_type,
+                "unique_count": stats.unique_count,
+                "null_pct": stats.missing_pct,
+            }
+            
+            if stats.analytical_type in ("continuous", "discrete_numeric"):
+                card["numeric_min"] = stats.minimum
+                card["numeric_max"] = stats.maximum
+                card["numeric_median"] = stats.median
+            
+            if stats.analytical_type == "datetime":
+                card["date_min"] = stats.minimum  # Assuming these were stored as string/timestamp
+                card["date_max"] = stats.maximum
+                
+            if llm_send_sample_labels and stats.analytical_type in ("categorical_nominal", "categorical_ordinal", "binary"):
+                if stats.freq_distribution:
+                    card["top_5_categories"] = list(stats.freq_distribution.keys())[:5]
+                    
+            schema_card.append(card)
+            
+        return schema_card

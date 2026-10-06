@@ -20,12 +20,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from preprocessing.datatype_detector import ColumnProfile
-from analysis.profiler import ColumnStats
-from analysis.univariate import UnivariateResult
-from analysis.bivariate import BivariatePair
-from analysis.multivariate import MultivariateResult
-from analysis.insight_engine import AnalyticalRelevanceScore
+from bi_automation.preprocessing.type_detector import ColumnProfile
+from bi_automation.profiling.profiler import ColumnStats
+from bi_automation.analysis.univariate import UnivariateResult
+from bi_automation.analysis.bivariate import BivariatePair
+from bi_automation.analysis.multivariate import MultivariateResult
+from bi_automation.analysis.insights import AnalyticalRelevanceScore
 
 logger = logging.getLogger(__name__)
 

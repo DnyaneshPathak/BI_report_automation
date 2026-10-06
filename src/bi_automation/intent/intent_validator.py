@@ -3,7 +3,7 @@ import re
 from typing import Dict, Optional, Tuple, Any
 
 from bi_automation.models.domain import DashboardIntent, DashboardSpec, VisualSpec, KPIIntent, PageSpec
-from preprocessing.datatype_detector import ColumnProfile
+from bi_automation.preprocessing.type_detector import ColumnProfile
 
 logger = logging.getLogger(__name__)
 

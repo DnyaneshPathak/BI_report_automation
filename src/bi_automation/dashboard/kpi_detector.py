@@ -17,8 +17,8 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from preprocessing.datatype_detector import ColumnProfile
-from analysis.profiler import ColumnStats
+from bi_automation.preprocessing.type_detector import ColumnProfile
+from bi_automation.profiling.profiler import ColumnStats
 
 logger = logging.getLogger(__name__)
 

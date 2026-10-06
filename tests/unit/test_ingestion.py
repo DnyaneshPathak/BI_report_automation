@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "src"))
 
-from bi_automation.ingestion.excel_reader import ExcelReader, MemoryLimitExceeded
+from bi_automation.ingestion.loader import DataLoader, MemoryLimitExceeded
 from bi_automation.config.settings import TEMP_DIR
 from bi_automation.config.constants import MAX_FILE_SIZE_MB
 
@@ -27,7 +27,7 @@ def test_memory_limit_enforced(monkeypatch, tmp_path):
         
     monkeypatch.setattr(Path, "stat", lambda self, *args, **kwargs: MockStat())
     
-    reader = ExcelReader(dummy_file)
+    reader = DataLoader(dummy_file)
     result = reader.read()
     
     assert not result.data_frames
@@ -39,7 +39,7 @@ def test_csv_ingestion(tmp_path):
     dummy_file = tmp_path / "test.csv"
     dummy_file.write_text("ID,Name,Value,Missing\n1,Alice,100,na\n2,Bob,,nan\n3,Charlie,300,5")
     
-    reader = ExcelReader(dummy_file)
+    reader = DataLoader(dummy_file)
     result = reader.read()
     
     assert not result.errors

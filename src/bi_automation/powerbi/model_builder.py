@@ -19,40 +19,36 @@ import json
 import logging
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 import pandas as pd
 
-from preprocessing.datatype_detector import ColumnProfile
-from dashboard.dax_generator import DAXMeasure
-from dashboard.kpi_detector import KPI
+from bi_automation.preprocessing.type_detector import ColumnProfile
+from bi_automation.powerbi.dax_generator import DAXMeasure
+from bi_automation.dashboard.kpi_detector import KPI
 from bi_automation.models.domain import VisualSpec
-from config import TEMP_DIR
+from bi_automation.config.settings import TEMP_DIR
 
 logger = logging.getLogger(__name__)
 
 
 class ModelBuilder:
 
+
     def __init__(
         self,
         df: pd.DataFrame,
         profiles: Dict[str, ColumnProfile],
-        dax_measures: List[DAXMeasure],
-        kpis: List[KPI],
-        chart_specs: Optional[List[VisualSpec]] = None,
-        visual_specs: Optional[List[VisualSpec]] = None,
+        plan: Dict[str, Any],
         dashboard_title: str = "Dashboard",
         table_name: str = "DataTable",
     ):
         self.df              = df
         self.profiles        = profiles
-        self.dax_measures    = dax_measures
-        self.kpis            = kpis
-        # Accept either kwarg name; visual_specs takes precedence
-        self.visual_specs    = visual_specs if visual_specs is not None else (chart_specs or [])
+        self.plan            = plan
         self.dashboard_title = dashboard_title
         self.table_name      = table_name
+
 
     def build(self, output_dir: Path) -> Path:
         """
@@ -254,22 +250,27 @@ class ModelBuilder:
     # ── Report layout ─────────────────────────────────────────────────────────
     def _build_report_layout(self) -> dict:
         sections = []
-        pages = {1: "Executive Overview", 2: "Detailed Analysis", 3: "Trend Analysis", 4: "Statistical Insights"}
-        for page_num, page_name in pages.items():
-            page_specs = [s for s in self.visual_specs if (s.page or 1) == page_num]
-            if not page_specs and page_num > 1:
-                continue
-            visuals = self._build_page_visuals(page_specs, page_num)
-            sections.append({
-                "name": str(uuid.uuid4()),
-                "displayName": page_name,
-                "ordinal": page_num - 1,
-                "visualContainers": visuals,
-                "config": json.dumps({
-                    "defaultDrillFilterOtherVisuals": True,
-                    "background": {"transparency": 100},
-                }),
-            })
+        visuals = self._build_page_visuals()
+        sections.append({
+            "name": str(uuid.uuid4()),
+            "displayName": self.dashboard_title,
+            "ordinal": 0,
+            "visualContainers": visuals,
+            "config": json.dumps({
+                "defaultDrillFilterOtherVisuals": True,
+                "background": {"transparency": 100},
+            }),
+        })
+
+        return {
+            "id": str(uuid.uuid4()),
+            "reportId": str(uuid.uuid4()),
+            "config": json.dumps({
+                "version": "5.43",
+                "themeCollection": {"baseTheme": {"name": "CY22SU03", "version": "5.43"}},
+            }),
+            "sections": sections,
+        }
 
         return {
             "id": str(uuid.uuid4()),

@@ -1,0 +1,402 @@
+<USER_REQUEST>
+# MASTER PROMPT v3 — Turn "BI Report Automation" into a Prompt-Driven, Truthful Dashboard Builder with a Local Ollama "Brain"
+
+> Paste everything below into Antigravity. Work on a new git branch (`feature/prompt-driven-ollama`). First output your PLAN (Section 17, Phase 0) and wait for my "go" before editing files.
+> This prompt **supersedes** the earlier "Feature Explorer / per-column dropdown" design. The new flow is: **upload → ONE prompt box → only what was asked**.
+
+---
+
+## 0. RULES FOR YOU (THE AGENT) — READ FIRST
+
+1. **Never open, print, summarise or upload the contents of any data file** in this workspace: `temp/*.csv`, `temp/*.xlsx`, `temp/*.pkl`, `temp/*_Project/Data/*`, `outputs/*.zip`, `*.log`. They contain real datasets (names seen: Telco_customer_churn, Online_Retail, Mall_Customers, Tweets). You may read file *names* only. Build and test with a **seeded synthetic data generator** (`tests/fixtures/synthetic_data.py`) only.
+2. **Nothing may leave this machine.** No cloud APIs, CDNs, fonts, telemetry. The only network call allowed in the whole app is HTTP to the **local Ollama server on `127.0.0.1:11434`**.
+3. Do not break working behaviour listed in Section 3.
+4. After every phase: run the tests, then give a ≤ 10-line summary (changed / how to run / how to verify / risks).
+5. If a requirement is ambiguous, make the most conservative choice, write it in `docs/decisions.md`, and continue — don't stall.
+
+---
+
+## 1. WHERE THE PROJECT IS TODAY (audit of the uploaded `BI_Report_Automation.zip`)
+
+**What it is:** local Flask app (`python main.py` → `127.0.0.1:5050`). Upload Excel → auto clean/profile/analyse → browser preview (ECharts) → approve → Power BI `.pbip` ZIP. 200 tests existed in the previous snapshot (mostly a repeated "no secrets in source" scan).
+
+**State = half-migrated, with leftovers:**
+- Two code trees: legacy (`app/`, `analysis/`, `dashboard/`, `ingestion/`, `preprocessing/`, `security/`, `config.py`) **and** `src/bi_automation/…`. `main.py` → `src/…/web/app.py::create_app()` → imports the **legacy** `app/controllers/flask_app.py` (731 lines) and `app/workflow/pipeline.py` (444 lines). `src/…/services/pipeline.py` is a stale duplicate.
+- Newest addition: `src/bi_automation/intent/description_planner.py` (467 lines) — regex keyword → chart-type planner ("trend"→line, "vs"→scatter, "by country"→bar *and* map…). It splits sentences on "and", falls back to `_auto_plan()` when nothing matches, and defaults to `sum`.
+- `configure.html` still shows: a global goal textarea, a card per column (checkbox + textarea), and 5 analysis-type checkboxes. `/start_analysis` mashes everything into one string `"For <col>: …| …"`.
+- **No Ollama / LLM code exists** (only a comment "no LLM" and a hard-coded `"llm_api_used": False` in old `security/privacy.py`).
+- Junk/leftover files in root: `check_conflicts*.py`, `resolve_conflicts.py` (merge-conflict helper scripts — merges happened; verify no logic was lost), `fix_preview.py`, `do_res.py`, `res_html.py`, `scratch_kpi.py`, `debug_response*.html`, `.pytest_cache/`, `*.egg-info/`.
+- ⚠ **`temp/` is 253 MB**: real datasets, 35 pickled result caches (`cache_<uuid>.pkl`), two exported Power BI project folders; `outputs/` holds exported ZIPs. Uploads still go to `temp/<original name>`; results are pickled to disk; nothing deletes them.
+- Old config values (`config.py`) incl. a hard-coded `SECRET_KEY` still exist; CSP still allows `'unsafe-inline'`; HTML is built in Python strings and rendered with `|safe`.
+
+**Verified by me (ran the old modules on a seeded synthetic frame, 600 rows):**
+- Column `Ticket No` (repeating integers) is classified `discrete_numeric`, and the KPI engine creates **"Total Ticket No = SUM('Ticket No') = 720,964"** while the dataset has 600 rows. This is exactly the client's complaint (should be a row/ticket **count**).
+- `Zip Code` is classified `identifier` (distinct count) — OK — but the identifier rule in `datatype_detector.py` depends on `all_int and unique_ratio > 0.95`, so any ID-like column with repeats escapes it; the name regex `\b(id|code|no|num|number|ref|key|…)\b` is used only as a secondary hint.
+
+**From code reading (not executed end-to-end — you must verify):**
+- `cleaner.py::_remove_exact_duplicates()` silently drops duplicate rows (`drop_duplicates`); `missing_values.py` silently imputes (median / mode / "Unknown"). `DataQualitySummary.duplicate_rows` is hard-coded to `0 # already removed`. → **records disappear / values are invented without the user knowing** (client complaint "system removes some records").
+- Chart axis layout in `preview_renderer.py`: fixed `nameGap` 35/65, labels rotated 45° with `hideOverlap`, `dataZoom` slider forced at `bottom: 10` while grid `bottom: 25%` → axis titles collide with tick labels/slider on long labels.
+- Chart/KPI/insight generation is "generate everything" (`ChartSelector`, `KPIDetector`, `InsightEngine`), and the old `ChartSelector` limits (donut ≤ 6 categories, one trend chart, caps) still apply.
+
+---
+
+## 2. CLIENT COMPLAINTS (from the handwritten notes) → ROOT CAUSE → FIX
+
+| # | Client complaint | Root cause | Fix (section) |
+|---|---|---|---|
+| C1 | "It gives **fake output**" | Auto-plan fallbacks invent charts; default `sum`; empty-data specs; stale caches; insights generated from templates regardless of the request; no validation of numbers | Plan→Validate→Execute→Provenance (§5, §10) |
+| C2 | "Not analyses data properly" | Heuristic type detection; analysis on all columns | Semantic column roles + aggregation policy (§6) |
+| C3 | Axis labels / axis titles **overlap** with tick values | Fixed `nameGap`, rotation, forced slider | Layout engine (§9) |
+| C4 | Generates **all kinds of charts & insights not requested** | Pipeline is "run everything" | **Only-what-was-requested** rule (§4.3, §5.5) |
+| C5 | "It's doing **false analysis**, e.g. zip code vs time/date/month" | No semantic compatibility rules | Compatibility matrix + validator (§6.3) |
+| C6 | "System **removes some records**, don't know why" | Silent duplicate removal + imputation | **No silent data changes**, row reconciliation (§10) |
+| C7 | "We are making dashboards for **presentation/analysis, not ML** → avoid unnecessary preprocessing (outlier removal, scaling…)" | Pipeline copies ML-style cleaning | Minimal, transparent preparation only (§10) |
+| C8 | **Ticket No** numeric column → KPI should **count rows**, system **sums** ticket numbers | Identifier vs measure confusion; "tickets?" listed in additive-name regex | Aggregation policy (§6.2) |
+| C9 | System should plot **every chart type that exists in Power BI** if the user names it | Small hard-coded chart list | Chart registry (§7) |
+| C10 | Should give **aggregated tabular data** on request | Not implemented | Table/matrix/pivot outputs + download (§7.3) |
+| C11 | Charts should be **dynamic** (e.g., sales trend by day / week / month / year) | Static single-grain charts | Dynamic controls (§8) |
+| C12 | Flow: upload Excel/CSV → **only one description/prompt box** → natural language → only that output | Feature cards, checkboxes, goal box | New UI & flow (§4) |
+| C13 | Add **NLP + Ollama** as the **brain** with **thinking ability** | Regex planner | Ollama planner + critic loop (§5, §11, §12) |
+| C14 | **Compare with Julius AI and make it same or better** | — | Benchmark & parity matrix (§15) |
+
+---
+
+## 3. KEEP WORKING (regression list)
+
+Excel upload (`.xlsx .xls .xlsm`) + **CSV** (make it truly work end-to-end), header-row detection, currency/percent/date parsing, SSE progress, ECharts preview with offline vendored `echarts.min.js`, feedback → regenerate (now via the prompt box), Approve → `.pbip` bundle (`model_builder`, `exporter`, `dax_generator`), Complete/Download, CSRF/Host/egress/log-redaction/temp-store modules, `python main.py` and `START.bat` on `127.0.0.1:5050`.
+
+---
+
+## 4. TARGET PRODUCT
+
+### 4.1 User flow (exactly this, nothing more)
+1. **Upload** `.xlsx/.xls/.xlsm/.csv` (drag & drop).
+2. A short "reading your file…" progress (profile only — **no charts yet**).
+3. **ONE screen with ONE large prompt box** and a "Generate" button. Show, read-only and collapsed by default, a compact **"Your data" strip**: file name (masked if needed), rows × columns, column names with detected role chips (so the user knows what exists). **Remove everything else** — no feature cards, no per-column boxes, no analysis-type checkboxes, no global goal box.
+4. The user writes in natural language, e.g. *"Show monthly sales trend by region as a line chart, a KPI for total tickets, and a table of top 10 countries by revenue."*
+5. Dashboard appears with **only** what was asked. Under it, the **same single prompt box stays** as a follow-up box ("make the trend weekly", "change it to a bar chart", "add a donut for payment method", "remove the table").
+6. Approve → Power BI bundle → Delete my data.
+
+### 4.2 Prompt-box UX
+- Placeholder with 3 rotating examples; character limit 2,000; Ctrl+Enter submits; empty submit disabled.
+- Optional **"Quick overview" button** that produces a clearly labelled small starter dashboard (max 1 KPI row + 3 charts). It is an *explicit user action*, never automatic.
+- If the request is vague ("analyse my data"), do **not** guess a big dashboard. Ask **one** clarifying question with 2–4 clickable suggestions (generated from the schema), or offer Quick overview.
+- After generation show **"What I understood"** chips: each requirement (R1, R2…) with the columns/aggregation/chart chosen and a confidence badge; clicking a chip lets the user edit it (dropdown of columns/charts). Low-confidence matches are highlighted and require a click to confirm.
+
+### 4.3 Only-what-was-requested rule (hard)
+- Every KPI, chart, table and sentence on the dashboard must trace to a **requirement ID** from the user's text. No requirement → it must not exist.
+- **No automatic insights.** Narrative text is produced only if the user asks ("insights", "explain", "why", "summarise", "recommend"). Otherwise charts have only their title.
+- No automatic data-quality banner of unrelated stuff; show only the **row-reconciliation line** (§10) and any warnings that affect *requested* items.
+- If something requested cannot be done, say so explicitly with the reason and a nearest alternative; never substitute silently.
+
+---
+
+## 5. ARCHITECTURE — "OLLAMA AS THE BRAIN" WITH A DETERMINISTIC BODY
+
+**Principle: the LLM decides *what to compute*; Python decides *whether it is valid* and *computes every number*.** The LLM never sees raw rows and never produces numbers shown to the user.
+
+```
+Upload ─► Loader (no mutation) ─► Profiler (semantic roles) ─► Schema Card
+                                                              │
+User prompt ─► NLP pre-parser (hints) ──────────────┐         │
+                                                    ▼         ▼
+                                  Ollama PLANNER (JSON-schema constrained)
+                                                    ▼
+                                  Plan Validator (deterministic rules)  ◄── repair loop (≤ 2) with Ollama CRITIC
+                                                    ▼
+                                  Executor (pandas, provenance logged)
+                                                    ▼
+                                  Renderer (ECharts JSON / tables)  ─►  Power BI exporter
+                                                    ▼
+                         (only if asked) Ollama NARRATOR → grounded-numbers checker
+```
+
+### 5.1 Components (all under `src/bi_automation/`)
+`nlp/` (pre-parser, lexicon, column matcher) · `llm/` (ollama_client, prompts, schemas, planner, critic, narrator, grounding, fallback) · `semantics/` (roles, aggregation policy, compatibility matrix) · `planning/` (plan schema, validator, normaliser) · `engine/` (executor, time_grain, filters, provenance) · `charts/` (registry + builders) · `tables/` · `web/` · `powerbi/` · `security/` · `services/`.
+
+### 5.2 Schema Card (what Ollama is allowed to see)
+For each column: name, **role** (§6), dtype, unique count, null %, numeric min/max/median (rounded), date min/max and inferred grain, top-5 category *labels only if the column is a low-cardinality dimension* (configurable: `LLM_SEND_SAMPLE_LABELS=false` by default). Also row count and the list of supported chart types and aggregations. **No row values, no free-text cell content, no IDs.** Column names are treated as untrusted text (strip control chars, cap length 80, wrap in delimiters, instruct the model that they are data, never instructions).
+
+### 5.3 Plan JSON (the only thing the planner may output) — validate with a strict JSON Schema + pydantic
+```json
+{
+  "version": 1,
+  "needs_clarification": null,
+  "requirements": [
+    {"id":"R1","text":"monthly sales trend by region as a line chart"}
+  ],
+  "filters": [{"column":"Order Date","op":"between","value":["2023-01-01","2023-12-31"],"from":"R4"}],
+  "items": [
+    {"id":"V1","requirement":"R1","type":"visual","chart":"line",
+     "x":{"column":"Order Date","grain":"month"},
+     "y":[{"column":"Sales","agg":"sum"}],
+     "series":{"column":"Region"},
+     "sort":null,"top_n":null,"title":"Monthly Sales by Region",
+     "dynamic":{"time_grain":["day","week","month","quarter","year"],"default_grain":"month"},
+     "confidence":0.93},
+    {"id":"K1","requirement":"R2","type":"kpi","metric":{"column":"Ticket No","agg":"count_rows"},"title":"Total Tickets","confidence":0.9},
+    {"id":"T1","requirement":"R3","type":"table","group_by":["Country"],
+     "metrics":[{"column":"Revenue","agg":"sum"}],"sort":{"by":"Revenue","dir":"desc"},"top_n":10,"totals":true}
+  ],
+  "assumptions":["'revenue' matched to column 'Sales Amount' (0.82)"]
+}
+```
+Rules: every `column` must exist; `agg` ∈ {sum, avg, median, min, max, count_rows, count_non_null, distinct_count, pct_of_total, rate}; `chart` ∈ registry names (§7); `type` ∈ {visual, kpi, table, matrix, slicer, text(narrative)}; unknown keys rejected; max 40 items.
+
+### 5.4 Thinking ability — a bounded multi-step reasoning loop
+Implement as **separate small calls** (cheaper and more reliable than one giant prompt), each with its own JSON schema, temperature 0, fixed seed:
+1. **Understand:** split the prompt into atomic requirements R1…Rn (intent, entities, metric words, time words, chart words, filters, top-N, "only/exclude").
+2. **Ground:** map each entity to schema columns with scores (use the NLP pre-parser's fuzzy/embedding candidates as hints). If best score < threshold or two candidates within 0.05 → mark ambiguous → clarification question.
+3. **Design:** choose chart/aggregation/grain per requirement using the role policy (§6) and chart-selection guidance in the system prompt.
+4. **Validate (code):** run the deterministic validator (§6.3, §5.6). Failures are returned to the model as **machine-readable error codes** ("E_AGG_NOT_ALLOWED: Ticket No role=identifier; allowed: count_rows, distinct_count").
+5. **Repair (≤ 2 rounds):** the CRITIC call receives the failing items + error codes and returns a corrected plan. If still invalid → drop the item, show it under "Couldn't build" with the reason, never fabricate.
+6. **Execute → Verify:** after computing, run sanity checks (non-empty result, no all-null, row-count ≥ 1, totals reconcile with source, no division by zero). Failures create a visible warning on that card.
+7. **Narrate (only if requested):** NARRATOR gets **computed facts as JSON** and writes short sentences; the **grounding checker** rejects any sentence containing a number/entity not present in the facts (regex-extract numbers, compare with tolerance after formatting) and regenerates once, else falls back to a template sentence.
+
+Include 8–12 **few-shot examples** in the planner system prompt (stored in `llm/prompts/*.md`, version-controlled), covering: KPI on an ID column (count), "trend" with dynamic grain, "top 10 by", "compare A vs B" (grouped bar, not scatter), "share of" (donut/pie), "distribution of" (histogram), "table of … by …", "waterfall", follow-up edits, vague prompt → clarification, impossible request (zip code vs date) → explanation.
+
+### 5.5 Follow-ups / memory
+Keep a per-session **conversation state** = current Plan + list of prior requirements. A follow-up prompt produces a **plan patch** (add / modify / remove item by id or by description: "the second chart", "the trend") applied to the current plan, then re-validated. Never regenerate the whole dashboard for a small edit. Provide an **undo** button (keep last 10 plans in memory only).
+
+### 5.6 Deterministic fallbacks (Ollama unavailable / invalid output)
+- Health check at startup and on the prompt page: `GET http://127.0.0.1:11434/api/tags`. If down, show a clear banner with how to start it, and switch to **rule mode**: the NLP pre-parser (+ simplified plan builder) handles clear requests (chart words + column names + aggregation words) and refuses vague ones with a clarification. Rule mode must also obey §4.3 (no auto-generation).
+- If the LLM returns invalid JSON twice → fall back to rule mode for that request and tell the user.
+- Timeouts: planner 60 s, narrator 60 s, configurable; show streaming progress ("Understanding… Matching columns… Validating… Computing…").
+
+---
+
+## 6. COLUMN INTELLIGENCE (fixes C2, C5, C8)
+
+### 6.1 Semantic roles (replace the current `analytical_type` usage for decisions)
+`identifier` (Ticket No, Invoice No, Order ID, Customer ID, SKU, Transaction Ref), `code_geo` (Zip/Postal/PIN, area code), `phone_like`, `measure_additive` (sales, revenue, amount, quantity, cost, profit, count-like quantities), `measure_nonadditive` (price, rate, ratio, %, age, score, rating, temperature, latitude/longitude, year-as-number), `dimension` (low/medium-cardinality categorical, incl. binary/flags), `dimension_high_card` (names, descriptions), `date`/`datetime`, `text_free`, `constant`.
+Decide with **name signals + value signals + LLM-assisted hint (optional)**:
+- Name signals (tokenised, case/underscore-insensitive): `id|no|num|number|code|ref|key|uuid|serial|ticket|invoice|order(no)?|sku|zip|postal|pin|phone|mobile` → identifier/code unless values clearly look like a measure (decimals, wide continuous spread, negative values) **and** the name has an additive-measure token.
+- Value signals: integer-only, no decimals, high uniqueness **or** repeated references (a ticket number can repeat across rows) , monotonic/sequential, fixed-length digit strings, leading zeros.
+- **A numeric-looking column named "Ticket No" must be `identifier`** even if values repeat (the current `unique_ratio > 0.95` gate is wrong). Show the role chip so the user sees it; let the user override by saying so in the prompt ("treat Ticket No as a number").
+- Remove "tickets?", "orders?", "transactions?", "bookings?", "visits?", "views?" from the **additive-measure name regex** — those words describe *counts of rows*, not summable columns.
+
+### 6.2 Aggregation policy (hard rules enforced by the validator)
+| Role | Allowed aggregations | Default for "total / how many / KPI" |
+|---|---|---|
+| identifier | `count_rows`, `distinct_count`, `count_non_null` | **`count_rows`** (use `distinct_count` only if the user says unique/distinct/different) |
+| code_geo, phone_like | `count_rows`, `distinct_count` | `distinct_count` |
+| measure_additive | sum, avg, median, min, max, count_non_null | sum |
+| measure_nonadditive | avg, median, min, max | avg |
+| dimension | count_rows, distinct_count, pct_of_total | count_rows |
+| date | min, max, count_rows, distinct_count | — |
+`SUM`/`AVG` on identifier/code/phone columns is **always an error (E_AGG_NOT_ALLOWED)**. "Total X" where X is an identifier means count of rows (client's rule). Power BI/DAX output must follow the same rule (`COUNTROWS`, `DISTINCTCOUNT`).
+
+### 6.3 Compatibility matrix (fixes C5 "zip code vs date")
+The validator rejects (or asks for confirmation on) combinations that are statistically/semantically meaningless:
+- `identifier`/`code_geo`/`phone_like` as **numeric axis**, in scatter, correlation, regression, trend-over-time-as-measure → rejected.
+- `measure_nonadditive` stacked/summed → rejected; latitude/longitude only for geo visuals.
+- `date` as a measure; `text_free` as axis; `constant` anywhere.
+- scatter needs two numeric measures; box plot needs numeric + optional dimension; line/area need an ordered axis (date or ordinal) — if user asks "compare A and B" with categories, prefer grouped bar.
+- Pairing a high-cardinality dimension (> 50 values) on an axis → require top-N or ask.
+Each rejection returns a human sentence for the UI, e.g. *"Zip Code is a code, not a quantity, so plotting it against dates has no meaning. Did you want the number of customers per zip code, or a trend of Sales by date?"*
+
+---
+
+## 7. CHART REGISTRY — ALL POWER BI VISUAL TYPES (fixes C9, C10)
+
+### 7.1 Registry design
+`charts/registry.py`: a dict `name → ChartDef(display_name, synonyms, data_shape, required_roles, ecs_builder, pbi_visual_type, supports_dynamic, notes)`. Synonym list is used by the NLP pre-parser and the LLM prompt (so "column chart", "vertical bar", "bars", "doughnut", "ring chart", "bridge chart" all resolve). Registry is the **single source of truth** for: what the LLM may choose, validator rules, ECharts rendering, and the Power BI `visualType` mapping.
+
+### 7.2 Charts to support (everything in Power BI's built-in visualisation pane that can be rendered offline)
+Bar & column: clustered bar, stacked bar, 100% stacked bar, clustered column, stacked column, 100% stacked column. Lines/areas: line, area, stacked area, 100% stacked area, **line & clustered column (combo, dual axis)**, **line & stacked column**, ribbon. Others: waterfall, funnel, scatter, **bubble** (scatter + size/colour), pie, donut, treemap, gauge, **card**, **multi-row card**, **KPI visual** (value + trend + target), slicer (dropdown/list/date-range/between), table, matrix (pivot with subtotals), **decomposition tree** (hierarchical breakdown), **key influencers** (driver ranking, local statistics), **smart narrative** (grounded text), **Q&A** (that is the prompt box itself). Also commonly requested non-native/custom: histogram, box-and-whisker, heatmap, radar, sunburst, sankey, Pareto, bullet, candlestick.
+**Maps (filled map / shape map / map):** offline only. Implement a choropleth with ECharts using **bundled GeoJSON** (world countries; add US states and India states if the licence allows and files are vendored). If the geography is not in the bundle, show a clear message + fall back to a ranked bar/table; never call an online map service. Document licences in `docs/third_party.md`.
+Not supported (state explicitly in UI if asked): R/Python script visuals, ArcGIS/Azure Maps (online), paginated reports, Power Apps/Automate visuals. Respond with a polite explanation and the closest supported alternative.
+
+### 7.3 Aggregated tables
+Table / matrix / pivot outputs from the plan: `group_by` (1–3 columns), multiple metrics with aggregations, sort, top-N, "Others" bucket, grand total & subtotals, % of total, rank column, number formatting, column totals. Matrix = row field(s) × column field × value with expand/collapse. **Download as CSV/XLSX** with formula-injection-safe cells (prefix `'` for cells starting with `= + - @`), and show the row count shown vs total. Tables are interactive client-side (sort, filter, search, paginate).
+
+### 7.4 Power BI export mapping
+Update `powerbi/exporter.py` / `model_builder.py` so each plan item becomes a report visual using the registry's `pbi_visual_type` (e.g. `clusteredColumnChart`, `clusteredBarChart`, `stackedColumnChart`, `hundredPercentStackedBarChart`, `lineChart`, `areaChart`, `lineClusteredColumnComboChart`, `ribbonChart`, `waterfallChart`, `funnel`, `scatterChart`, `pieChart`, `donutChart`, `treemap`, `gauge`, `card`, `multiRowCard`, `kpi`, `slicer`, `tableEx`, `pivotTable`, `decompositionTreeVisual`, …) — **verify the exact strings against the Power BI visual JSON schema / an existing generated `report.json` before use**; where a visual cannot be expressed in a PBIP, export the closest native one and list it in `export_notes.txt`. Measures follow §6.2 (COUNTROWS / DISTINCTCOUNT for identifiers). Bundle the data file **inside** the project with a relative path (never an absolute temp path).
+
+---
+
+## 8. DYNAMIC DASHBOARD (fixes C11)
+
+All client-side, from pre-aggregated JSON the server provides (no network calls):
+- **Time grain switch** (Day / Week / Month / Quarter / Year) on every chart with a date axis; default grain chosen from the data span or the user's words; ISO weeks; fiscal year start configurable (default Jan, or set via prompt "fiscal year starting April"). Server ships day-level aggregates (cap points; if > 20,000 days×series, ship pre-aggregated week/month/quarter/year arrays instead) so switching is instant.
+- **Date-range slider / brush**; **cumulative / running total**, **YoY / MoM %** toggles when the metric is additive.
+- **Drill hierarchy** for time (Year → Quarter → Month → Day) and for category hierarchies the user names (Country → City).
+- Per-chart controls (only when valid): metric/aggregation toggle, Top-N slider, sort asc/desc, show/hide labels, chart-type switch within a *compatible family* (bar ↔ column ↔ line ↔ area where the data shape allows).
+- **Slicers** only if requested ("add a region filter") and then they cross-filter all visuals that share the column; "Clear filters" button; show active filters as chips and the filtered row count.
+- Dynamic ≠ live: no polling, all in-memory. Respect `prefers-reduced-motion`.
+
+---
+
+## 9. CHART LAYOUT ENGINE — NO OVERLAPPING TEXT (fixes C3)
+
+Create `charts/layout.py` and use it for every builder. **No hard-coded `nameGap`, rotation or `bottom: 25%`.**
+- Measure text: estimate pixel width per label (char count × font-size × 0.6, or canvas `measureText` in `charts.js` after font load) and compute grid margins from the **longest tick label** (left margin for y labels; bottom for rotated x labels), then place **axis titles outside the tick labels** (x-axis name at the axis end/bottom row of its own, y-axis name rotated 90° in its own left gutter). Use `grid.containLabel: true` plus computed extra gutter for axis names.
+- Strategy for long/many category labels: wrap to 2 lines (`width` + `overflow:'break'`) → else rotate 30–45° → else switch to **horizontal bar** → else show every N-th label + tooltip with full text. Never print overlapping labels (`hideOverlap` is a last resort, not the plan).
+- Legend: top, scrollable (`type:'scroll'`), never over the plot; leave reserved height in the grid.
+- `dataZoom` slider only when points > ~60, with reserved bottom space *added to* the label margin.
+- Value labels: default **on** for bars/slices/line-ends/peaks when ≤ 20 points; hidden for dense series (tooltip instead); use `labelLayout: {hideOverlap:true}`; number formatting (thousands separators, K/M/B, %, currency symbol from the column).
+- Titles: chart title + a subtitle with the aggregation ("Sum of Sales, Jan–Dec 2023"); axis titles with units; font sizes ≥ 12 px; all charts resize with their container (`ResizeObserver`).
+- **Test for overlap:** add a Playwright (dev-only) or headless DOM test that renders each chart type with (a) very long labels, (b) 100 categories, (c) negative values, (d) tiny container, then asserts no overlap among axis-name / tick-label / legend bounding boxes (use ECharts `getZr()` text bounding rects or screenshot diff). If a browser test runner can't be added, implement a pure-Python layout unit test on the computed margins.
+
+---
+
+## 10. DATA INTEGRITY — NO SILENT CHANGES (fixes C1, C6, C7)
+
+**The dashboard is for presentation and analysis, not machine learning. Do not "prepare data for a model."**
+- **Loader never mutates values.** Only: header detection, trimming column-name whitespace, type *parsing* (dates, numbers with currency/commas/percent), and null-token recognition ("", "NA", "N/A", "null", "-") — each reported in a "Preparation log".
+- **Never** by default: remove outliers, winsorise, scale/normalise/standardise, encode, drop columns, drop rows, impute values, or filter. Delete `OutlierAnalyser`/imputation from the default path (keep code only if reused by an explicit user request such as "flag outliers" → shown, not removed).
+- **Duplicates:** the client's note lists "duplicates" as struck-out, so treat duplicate handling as *not* an unnecessary step, but **never remove rows silently**. Default = keep all rows (transaction data legitimately repeats); compute and show the exact-duplicate count only if the user asks ("remove duplicates", "how many duplicates"); if the prompt says to remove them, do it **in the query, visibly** ("Excluded 128 duplicate rows") and record it in provenance. Record this default in `docs/decisions.md` for the client to confirm.
+- **Missing values:** keep as blank/NaN. Aggregations skip nulls the same way Power BI does; categories show as "(Blank)". Never fill with median/mode/"Unknown" unless the user asks.
+- **Row reconciliation line (always visible):** `Rows loaded: 7,043 • Rows used: 7,043 • Filtered by your request: 0`. Any filter coming from the prompt ("only 2023", "exclude cancelled") appears as a chip with the excluded count. A hidden row drop is a **critical bug** — add an invariant test: `rows_used + rows_filtered_by_request == rows_loaded` for every plan.
+- **Provenance:** every KPI/chart/table stores the executed spec (columns, agg, filters, grain, row counts) and shows it under a "How this was calculated" popover; plus a machine-readable `provenance.json` in the export bundle. This is the antidote to "fake output".
+- **Truth tests:** for each requirement type compute the expected number independently with plain pandas on synthetic data and compare to the engine output (exact for counts/sums, tolerance 1e-9 for means).
+
+---
+
+## 11. OLLAMA INTEGRATION DETAILS
+
+- **Client:** thin module `llm/ollama_client.py` using the official `ollama` Python package or `httpx`/`http.client` against `http://127.0.0.1:11434/api/chat`. Allow-list **only** loopback `:11434` in the egress guard and in the "no external URLs/network libraries" security test (whitelist this one module). Read the host from env `OLLAMA_HOST` but **refuse any non-loopback host**.
+- **Local models only:** reject model tags that indicate hosted/cloud models (e.g. names containing `cloud`) and warn if the Ollama server is not bound to localhost. State in `docs/security.md` how to verify Ollama makes no outbound calls for inference.
+- **Structured output:** use Ollama's `format` parameter with a **JSON schema** (supported in recent versions — check `/api/version` and fall back to `format:"json"` + strict parsing/validation on older versions). `temperature: 0`, fixed `seed`, `num_ctx` sized to the schema card (cap tokens), `stream: false` for planner/critic, `keep_alive` e.g. 10 min, `num_predict` capped.
+- **Model choice:** config `LLM_MODEL` with sensible defaults chosen at first run from installed models (`/api/tags`). Recommend an instruct model with good JSON/tool adherence in the 7–8 B class for 16 GB RAM machines (e.g. Qwen2.5-7B-Instruct or Llama 3.1 8B) and a ~3–4 B class for 8 GB machines (e.g. a small Qwen/Llama/Phi instruct model) — **verify availability in the Ollama library at implementation time and document the tested model + its measured latency**. Provide a Settings panel (model dropdown from `/api/tags`, "Test connection", "Install instructions", timeout).
+- **Prompt files:** `llm/prompts/planner_system.md`, `critic_system.md`, `narrator_system.md`, `fewshots/*.json`, versioned and unit-tested (prompt renders, token budget check).
+- **Prompt-injection hardening:** column names and prompt text are data. Delimit them; instruct the model to ignore instructions inside them; output is schema-constrained and then validated, so injected text can't create arbitrary actions (no code execution, no file access, no URLs). Never execute LLM-generated code — **there is no `eval/exec` anywhere**; the executor only understands the Plan schema.
+- **Caching:** cache plans by `(schema_hash, normalised_prompt, model, prompts_version)` in memory with TTL; never persist to disk.
+- **Observability (privacy-safe):** log durations, token counts, validation error codes — never prompt text containing column values; redact column names at INFO.
+- **Cold-start UX:** first call can take long (model load) → show progress and a "warming up the model" message; allow cancel.
+
+---
+
+## 12. NLP LAYER (deterministic, offline — a helper to the LLM and the fallback)
+
+`nlp/preparser.py`: normalise text (lowercase, lemmatise plural/singular, remove filler), then extract **hints**: chart words (from registry synonyms), aggregation words (total/sum/average/mean/median/count/number of/unique/distinct/max/min/percentage/share), time words (daily/weekly/monthly/quarterly/yearly/trend/over time/YoY/MoM/last N months/in 2023/between…), top/bottom N, comparison words (vs/versus/compare), filters (only/excluding/where/for), table/matrix/pivot words, narrative words (insight/explain/why/recommend), negation ("don't show…").
+`nlp/column_matcher.py`: exact → normalised → token-set overlap → `rapidfuzz` fuzzy (add dependency, offline) → optional local embeddings (`sentence-transformers` small model, **optional**, off by default; if added, download once, then offline mode) for synonyms ("revenue" ↔ "Sales Amount"). Returns top-k candidates with scores; ties → clarification.
+**Important:** `\bvs\b` must NOT automatically mean scatter; `by country` must NOT automatically mean both bar and map; sentences must not be split on "and" blindly. The LLM resolves meaning; the pre-parser only supplies hints and handles rule-mode.
+
+---
+
+## 13. SECURITY & PRIVACY (still non-negotiable)
+
+Carry over all earlier rules and finish what is open:
+- **Delete from the workspace:** `temp/` (all data, pickles, exported project folders), `outputs/*.zip`, `.pytest_cache/`, `*.egg-info/`, `__pycache__/`, `debug_response*.html`, root scratch/merge scripts. If this repo was ever pushed or shared: purge history (`git filter-repo`), rotate any secret, treat data as exposed. Add a pytest that fails if any data file, pickle or `SECRET_KEY = "…"` literal is tracked.
+- **No pickle anywhere.** Keep session data in memory (`SessionStore` with TTL + max sessions); uploads only in `var/tmp/<uuid>/input.<ext>` (ignore client file name), deleted on TTL/exit/"Delete my data now"/after export; exported bundles contain the data **inside** the bundle with relative paths.
+- Upload validation by magic bytes + extension + zip-bomb guard for xlsx; CSV encoding/delimiter sniffing; limits (200 MB, 1 M rows, 500 columns); `openpyxl data_only=True, keep_vba=False`.
+- Jinja autoescape on; **no `|safe` on anything derived from data**; dashboards fed by a JSON endpoint and rendered with `textContent`; strict CSP **without `'unsafe-inline'`** (move all inline JS/CSS to static files); CSRF on every POST; Host-header check; cookies HttpOnly + SameSite=Strict; generic error pages with an error ID (details only in redacted logs).
+- Egress guard stays on; the only allowed non-listening connection is loopback `:11434`. Add tests: external connect blocked, Ollama non-loopback host refused, templates contain no external URLs.
+- Redacting log filter (no cell values, hashed file names). Formula-injection escaping on every export (CSV/XLSX/Power BI data file).
+- Pin dependencies; add `pip-audit` to dev requirements; vendor ECharts + GeoJSON with licences and SHA-256 in `docs/security.md`.
+
+---
+
+## 14. FOLDER STRUCTURE (finish the migration; one source of truth)
+
+```
+bi-report-automation/
+├── main.py                      # shim only
+├── START.bat  (root shim)  scripts/{start.bat,start.sh,check_ollama.py,purge_runtime_data.py}
+├── pyproject.toml  requirements.txt  requirements-dev.txt  .gitignore  .env.example  README.md
+├── docs/ {architecture.md, security.md, decisions.md, user_guide.md, third_party.md, benchmark/}
+├── src/bi_automation/
+│   ├── config/  core/(types, errors)  security/
+│   ├── ingestion/ (excel_reader, csv_reader, loader)        # no mutation
+│   ├── semantics/ (roles, aggregation_policy, compatibility)
+│   ├── nlp/ (preparser, lexicon, column_matcher)
+│   ├── llm/ (ollama_client, planner, critic, narrator, grounding, fallback, schemas, prompts/)
+│   ├── planning/ (plan_schema, validator, patcher)
+│   ├── engine/ (executor, time_grain, filters, provenance, reconcile)
+│   ├── charts/ (registry, layout, builders/…)   tables/ (builder, export)
+│   ├── powerbi/ (model_builder, exporter, dax_generator, visual_map)
+│   ├── services/ (session_store, job_runner)
+│   └── web/ (app factory, routes/{upload,prompt,dashboard,export,settings}, templates/, static/{css,js,vendor,geo})
+├── tests/ {unit, integration, security, e2e, golden, fixtures/synthetic_data.py}
+└── var/ (gitignored: tmp, outputs, logs)
+```
+Move with `git mv`, then **delete** the legacy folders and root scratch scripts; fix all imports to `bi_automation.*`; remove `sys.path` hacks; no file > ~300 lines; no HTML/JS/CSS inside `.py`; `README.md` truthful (`.pbip`, offline, Ollama setup).
+Remove now-obsolete UI: `configure.html`, `/configure`, `/start_analysis`, per-column cards, analysis-type checkboxes. Replace with `prompt.html` + `/api/plan`, `/api/generate`, `/api/followup`.
+
+---
+
+## 15. JULIUS AI PARITY (fixes C14) — "same or better"
+
+I will run the same prompts in Julius AI manually (you cannot access it) — **build the benchmark kit, not a Julius integration**.
+- `docs/benchmark/prompts.md`: **40 natural-language prompts** across 8 groups (KPI cards, aggregations/tables, trends with grain, comparisons, distributions, top-N, filters/time ranges, follow-up edits, unusual charts such as waterfall/funnel/treemap/combo, impossible/misleading requests like "zip code vs month").
+- `docs/benchmark/scorecard.md`: rubric (0–2 each): correct numbers, correct chart for intent, only-what-was-asked, label legibility, handles follow-up, explains assumptions, speed, privacy/offline, exportable (Power BI/CSV). Columns for Julius AI / our tool, filled in by me.
+- `tests/golden/`: the same prompts run against **synthetic datasets that mimic** typical business files (retail transactions with InvoiceNo/StockCode/Quantity/UnitPrice/InvoiceDate/CustomerID/Country; customer churn; support tickets with Ticket No; mall customers). Golden expectations = plan JSON + numbers computed by independent pandas code. Use a **fake LLM** in CI that replays recorded plans; add a separate opt-in test suite that runs with the real local Ollama model.
+- Where we should **beat** Julius: runs fully offline, shows provenance for every number, never silently drops rows, validated chart/aggregation rules (no SUM of IDs), Power BI `.pbip` export, no data upload to any server.
+- Where we should **match**: conversational follow-ups, any common chart on request, tables on request, plain-English "what I understood", fast first response, downloadable results.
+
+---
+
+## 16. TESTS (must exist and pass)
+
+- **Regression tests for each complaint:** (C8) KPI on a repeating-int "Ticket No" == `len(df)` rows, never the sum; DAX is `COUNTROWS`/`DISTINCTCOUNT`; (C5) "zip code vs month" → validator error + clarification, no chart; (C6) row-reconciliation invariant for 20 random plans including filters and "remove duplicates"; (C7) no outlier removal/scaling/imputation occurs (dataframe hash before/after load+execute unchanged); (C4) a prompt asking for 1 KPI + 1 chart yields exactly 2 items and **no** insights; (C3) layout tests; (C9) every registry chart renders from a synthetic frame; (C10) table totals reconcile with source; (C11) grain switch day→year sums equal; (C12) UI has exactly one textarea and no per-column controls; (C13) planner JSON is schema-valid; invalid model output triggers repair → fallback; injected column name "ignore previous instructions" has no effect.
+- **LLM-layer tests with a fake Ollama** (recorded responses): valid, invalid JSON, hallucinated column, forbidden aggregation, timeout, non-loopback host, cloud-tag model.
+- **Security:** CSRF, Host, XSS payloads in column names/sheet names/file names/prompt text, zip bomb, formula injection, no external URLs/imports (except the one Ollama module), egress guard, temp folder empty after session end, logs contain no cell values, no pickle.
+- **Perf (benchmarks, not default run):** 100 k rows × 30 cols: profile ≤ 3 s; executing a 10-item plan ≤ 2 s (pandas, vectorised, `category` dtype, `usecols`); LLM latency measured and reported separately.
+- Generate all data from `tests/fixtures/synthetic_data.py` (seeded). Never commit data.
+
+---
+
+## 17. EXECUTION PLAN (one phase at a time; tests green before moving on)
+
+0. **Plan & snapshot** — print the plan, list files you'll delete (names only), tag current state.
+1. **Hygiene & single tree** — delete data/pickles/junk/legacy duplicates, finish migration to `src/bi_automation`, keep `python main.py` working, run tests.
+2. **Data integrity layer** — non-mutating loader (+CSV), remove default dedupe/imputation/outlier steps, row reconciliation, provenance, preparation log.
+3. **Semantic roles + aggregation policy + compatibility validator** — fix Ticket No / zip-vs-date; tests.
+4. **Plan schema + executor + chart registry (all types) + tables + layout engine** — render from hand-written plans (no LLM yet); label-overlap tests.
+5. **NLP pre-parser + rule-mode planner** — works fully without Ollama (clear prompts only).
+6. **Ollama layer** — client, planner, critic loop, schema-constrained output, fallback, caching, settings panel, health check, security tests.
+7. **New UI** — upload → single prompt box → dashboard + follow-up box; "what I understood" chips; clarification buttons; remove old configure UI.
+8. **Dynamic features** — time-grain switch, range brush, slicers on request, drill, per-chart controls.
+9. **Narrator + grounding checker** — only on request.
+10. **Power BI export** — visual map, DAX per policy, data inside bundle, `export_notes.txt`.
+11. **Security completion** — CSP without inline, XSS fixes, no pickle, TTL/"Delete my data".
+12. **Benchmark kit + docs** — 40 prompts, scorecard, golden tests, README/user guide/decisions.
+13. **Final audit** — all tests, `ruff`, `pip-audit`, offline check (disable network → app + Ollama still work), checklist report.
+
+---
+
+## 18. DEFINITION OF DONE (report ✅/❌ for each)
+
+- [ ] Upload `.xlsx/.xls/.xlsm/.csv` works; next screen has **exactly one prompt box** (+ read-only data strip); no other config controls.
+- [ ] Output contains **only** requested KPIs/charts/tables/text; no automatic insights; vague prompt → one clarification or explicit "Quick overview".
+- [ ] "Total tickets" on `Ticket No` = row count (also in DAX); SUM/AVG on identifiers/codes is impossible.
+- [ ] "Zip code vs date/month" is refused with an explanation and alternatives.
+- [ ] No rows removed/values changed by default; row-reconciliation line visible; provenance popover on every item.
+- [ ] No outlier removal / scaling / imputation anywhere in the default path.
+- [ ] Every Power BI visual type in §7.2 can be requested by name and rendered (or politely declined with reason for the unsupported list); tables/matrix with totals + CSV/XLSX download.
+- [ ] Dynamic: day/week/month/quarter/year switch, range brush, top-N, sort, label toggle, slicers on request.
+- [ ] No overlapping axis titles/ticks/legends in the layout tests; value labels visible; numbers formatted.
+- [ ] Ollama is the planner/critic/narrator through validated JSON; works with the fake LLM in CI and a real local model manually; rule-mode fallback works with Ollama stopped.
+- [ ] Only loopback `:11434` is reachable; non-loopback host and cloud models refused; no external URL/font/CDN; offline check passes.
+- [ ] No pickle, no data in repo, temp wiped on TTL/exit/delete; CSP without inline; XSS/CSRF/Host/zip-bomb/formula tests pass.
+- [ ] Single clean folder structure; no duplicate legacy tree; no file > ~300 lines.
+- [ ] Benchmark kit + golden tests delivered; parity matrix ready for me to fill in against Julius AI.
+- [ ] README/docs truthful (offline, Ollama setup, `.pbip`).
+- [ ] `python main.py` and `START.bat` still start the app on `127.0.0.1:5050`.
+
+---
+
+## 19. DO NOT
+
+- Do not read/print/upload any data file; do not use real data in tests.
+- Do not add any network call except the loopback Ollama client; no cloud LLMs, no telemetry, no CDN.
+- Do not let the LLM compute, see raw rows, run code, or emit anything outside the Plan schema.
+- Do not auto-generate charts, KPIs or insights that the user did not ask for.
+- Do not remove, filter, scale, clip or impute data unless the user explicitly asks — and then show it.
+- Do not guess an ambiguous column match — ask.
+- Do not leave TODOs on security, data-integrity or validation rules.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-10-06T20:22:32+05:30.
+
+The user's current state is as follows:
+Active Document: c:\Users\Dnyanesh Pathak\OneDrive\Desktop\BI_Report_Automation\app\controllers\flask_app.py (LANGUAGE_PYTHON)
+Cursor is on line: 1
+Other open documents:
+- c:\Users\Dnyanesh Pathak\OneDrive\Desktop\BI_Report_Automation\src\bi_automation\powerbi\exporter.py (LANGUAGE_PYTHON)
+- c:\Users\Dnyanesh Pathak\OneDrive\Desktop\BI_Report_Automation\src\bi_automation\web\static\js\processing.js (LANGUAGE_JAVASCRIPT)
+- c:\Users\Dnyanesh Pathak\OneDrive\Desktop\BI_Report_Automation\tests\unit\test_cleaner.py (LANGUAGE_PYTHON)
+- c:\Users\Dnyanesh Pathak\OneDrive\Desktop\BI_Report_Automation\app\controllers\flask_app.py (LANGUAGE_PYTHON)
+- c:\Users\Dnyanesh Pathak\OneDrive\Desktop\BI_Report_Automation\.git\COMMIT_EDITMSG (LANGUAGE_UNSPECIFIED)
+</ADDITIONAL_METADATA>

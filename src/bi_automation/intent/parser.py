@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
 from bi_automation.models.domain import VisualSpec
-from preprocessing.datatype_detector import ColumnProfile
+from bi_automation.preprocessing.type_detector import ColumnProfile
 
 logger = logging.getLogger(__name__)
 

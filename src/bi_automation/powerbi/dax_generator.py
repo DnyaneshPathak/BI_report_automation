@@ -15,8 +15,8 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, List
 
-from preprocessing.datatype_detector import ColumnProfile
-from dashboard.kpi_detector import KPI
+from bi_automation.preprocessing.type_detector import ColumnProfile
+from bi_automation.dashboard.kpi_detector import KPI
 
 logger = logging.getLogger(__name__)
 

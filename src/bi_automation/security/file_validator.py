@@ -22,7 +22,7 @@ from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_EXTENSIONS  = {".xlsx", ".xls", ".xlsm"}
+ALLOWED_EXTENSIONS  = {".xlsx", ".xls", ".xlsm", ".csv"}
 MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024   # 200 MB
 
 # Patterns that might indicate formula injection in cell values

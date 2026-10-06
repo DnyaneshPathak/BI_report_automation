@@ -26,7 +26,7 @@ from typing import Optional, Tuple
 
 import pandas as pd
 
-from config import OUTPUT_DIR, TEMP_DIR
+from bi_automation.config.settings import OUTPUT_DIR, TEMP_DIR
 from bi_automation.powerbi.model_builder import ModelBuilder
 
 logger = logging.getLogger(__name__)

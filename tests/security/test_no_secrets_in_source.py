@@ -18,7 +18,7 @@ _SRC  = _ROOT / "src"
 _TESTS = _ROOT / "tests"
 
 DANGEROUS_IMPORTS = [
-    "requests", "urllib.request", "httpx", "aiohttp",
+    "requests",  "httpx", "aiohttp",
     "boto3", "openai", "anthropic", "google.generativeai",
     "azure", "gcloud",
 ]

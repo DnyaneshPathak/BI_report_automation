@@ -83,7 +83,7 @@ def create_app() -> Flask:
         sys.path.insert(0, str(_project_root))
 
     # Import the legacy app object
-    from app.controllers.flask_app import app as legacy_app  # type: ignore
+    from bi_automation.web.routes.legacy_routes import app as legacy_app  # type: ignore
     from flask import request, abort
 
     # Overwrite the secret key with the secure one from settings

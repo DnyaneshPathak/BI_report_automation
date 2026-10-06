@@ -16,9 +16,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from preprocessing.datatype_detector import ColumnProfile
-from analysis.profiler import ColumnStats
-from config import MIN_ROWS_FOR_STAT_TEST
+from bi_automation.preprocessing.type_detector import ColumnProfile
+from bi_automation.profiling.profiler import ColumnStats
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +87,7 @@ class StatisticalAnalyser:
     def _normality_test(self, col: str) -> Optional[StatTestResult]:
         series = pd.to_numeric(self.df[col], errors="coerce").dropna()
         n = len(series)
-        if n < MIN_ROWS_FOR_STAT_TEST or n > 5000:
+        if n < 30 or n > 5000:
             return None
         try:
             stat, p = stats.shapiro(series.sample(min(n, 1000), random_state=42))
@@ -113,7 +112,7 @@ class StatisticalAnalyser:
     def _confidence_interval(self, col: str) -> Optional[StatTestResult]:
         series = pd.to_numeric(self.df[col], errors="coerce").dropna()
         n = len(series)
-        if n < MIN_ROWS_FOR_STAT_TEST:
+        if n < 30:
             return None
         mean = series.mean()
         se   = stats.sem(series)
@@ -138,7 +137,7 @@ class StatisticalAnalyser:
             "num": pd.to_numeric(self.df[num_col], errors="coerce"),
             "cat": self.df[cat_col].astype(str),
         }).dropna()
-        if len(df_temp) < MIN_ROWS_FOR_STAT_TEST:
+        if len(df_temp) < 30:
             return None
 
         groups = [g["num"].values for _, g in df_temp.groupby("cat") if len(g) >= 5]

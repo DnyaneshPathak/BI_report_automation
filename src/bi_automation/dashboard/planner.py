@@ -2,9 +2,9 @@ import logging
 from typing import Dict, List
 
 from bi_automation.models.domain import DashboardSpec, VisualSpec, PageSpec, KPIIntent
-from preprocessing.datatype_detector import ColumnProfile
-from analysis.profiler import ColumnStats
-from analysis.bivariate import BivariatePair
+from bi_automation.preprocessing.type_detector import ColumnProfile
+from bi_automation.profiling.profiler import ColumnStats
+from bi_automation.analysis.bivariate import BivariatePair
 
 logger = logging.getLogger(__name__)
 
